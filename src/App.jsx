@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from './supabase'
 
 // ── 모듈 레벨 styles 참조 (하위 컴포넌트용) ──────
@@ -45,6 +45,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [addProjectOpen, setAddProjectOpen] = useState(false)
   const [darkMode, setDarkMode] = useState(
     () => window.matchMedia('(prefers-color-scheme: dark)').matches
   )
@@ -204,51 +205,45 @@ export default function App() {
     <div style={styles.root}>
       {/* NAV */}
       <nav style={styles.nav}>
-        <div style={styles.navLeft}>
-          <div style={styles.logo}>BD <span style={styles.logoAccent}>Pipeline</span></div>
+        {/* 좌: 로고만 */}
+        <div style={styles.logo}>BD <span style={styles.logoAccent}>SalesGear</span> <span style={{ fontSize:13 }}>⚙️</span></div>
+
+        {/* 우: 모드탭 + 다크 + 로그아웃 + 유저 */}
+        <div style={styles.navRight}>
+          {/* 모드 탭 */}
           <div style={styles.modeTabs}>
-            {[['personal','개인 뷰'],['admin','관리자 뷰'],['sim','시뮬레이션']].map(([m, label]) => (
-              <button key={m} style={{...styles.modeTab, ...(mode===m ? (m==='sim' ? styles.modeTabSimActive : styles.modeTabActive) : {})}}
+            {[['personal','개인 뷰'],['admin','전체 뷰'],['sim','시뮬레이션']].map(([m, label]) => (
+              <button key={m}
+                style={{...styles.modeTab, ...(mode===m ? (m==='sim' ? styles.modeTabSimActive : styles.modeTabActive) : {})}}
                 onClick={() => setMode(m)}>{label}</button>
             ))}
           </div>
-        </div>
-        <div style={styles.navRight}>
-          {/* 환율 선택 */}
-          <div style={styles.ccyWrap}>
-            <span style={styles.ccyLabel}>단위</span>
-            <select style={styles.ccySel} value={ccy} onChange={e => setCcy(e.target.value)}>
-              {['KRW','USD','CNY','JPY','EUR'].map(c => (
-                <option key={c} value={c}>{CCY_LABELS[c]}</option>
-              ))}
-            </select>
-            <div style={{...styles.rateDot, background: rateStatus==='live' ? '#4ade80' : rateStatus==='loading' ? '#fbbf24' : '#6b7280'}} />
-            <span style={styles.rateLabel}>{rateStatus==='live' ? '실시간' : rateStatus==='loading' ? '...' : '기준값'}</span>
+
+          {/* 다크 토글 */}
+          <button onClick={() => setDarkMode(d => !d)} style={{
+            fontSize:12, padding:'0 10px', height:30, borderRadius:6,
+            border:'1px solid ' + (darkMode ? '#2a2a2a' : '#d1d5db'),
+            background:'transparent',
+            color: darkMode ? '#fbbf24' : '#6b7280',
+            cursor:'pointer', fontFamily:"'Geist', sans-serif",
+            whiteSpace:'nowrap', boxSizing:'border-box'
+          }}>{darkMode ? '☀️ 라이트' : '🌙 다크'}</button>
+
+          {/* 로그아웃 */}
+          <button onClick={() => supabase.auth.signOut()} style={{
+            fontSize:12, padding:'0 10px', height:30, borderRadius:6,
+            border:'1px solid ' + (darkMode ? '#2a2a2a' : '#d1d5db'),
+            background:'transparent',
+            color: darkMode ? '#9ca3af' : '#6b7280',
+            cursor:'pointer', fontFamily:"'Geist', sans-serif",
+            whiteSpace:'nowrap', boxSizing:'border-box'
+          }}>로그아웃</button>
+
+          {/* 유저 */}
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <div style={styles.avatar}>J</div>
+            <span style={styles.userName}>{session?.user?.email?.split('@')[0] || 'Jake'}</span>
           </div>
-          <button
-            onClick={() => setDarkMode(d => !d)}
-            style={{
-              fontSize:12, padding:'4px 10px', borderRadius:6,
-              border:'1px solid ' + (darkMode ? '#2a2a2a' : '#d1d5db'),
-              background:'transparent',
-              color: darkMode ? '#fbbf24' : '#6b7280',
-              cursor:'pointer', fontFamily:"'Geist', sans-serif"
-            }}
-          >
-            {darkMode ? '☀️ 라이트' : '🌙 다크'}
-          </button>
-          <div style={styles.avatar}>J</div>
-          <span style={styles.userName}>Jake</span>
-          <button
-            onClick={() => supabase.auth.signOut()}
-            style={{
-              fontSize:11, padding:'4px 10px', borderRadius:6,
-              border:'1px solid ' + (darkMode ? '#2a2a2a' : '#d1d5db'),
-              background:'transparent',
-              color: darkMode ? '#9ca3af' : '#6b7280',
-              cursor:'pointer', fontFamily:"'Geist', sans-serif"
-            }}
-          >로그아웃</button>
         </div>
       </nav>
 
@@ -270,42 +265,52 @@ export default function App() {
         </div>
       )}
 
-      {/* TOOLBAR */}
+      {/* TOOLBAR: 분기 + 환율 + 검색 + 담당자 + 구분 + 상태 + 추가 */}
       <div style={styles.toolbar}>
-        <div style={styles.toolbarLeft}>
-          {/* 분기 범위 */}
-          <QuarterRangePicker quarters={quarters} range={quarterRange} onChange={setQuarterRange} />
-          {/* 담당자 필터 */}
-          <select style={styles.ownerSel} value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
-            <option value="all">전체 담당자</option>
-            {owners.map(o => <option key={o} value={o}>{o}</option>)}
+        {/* 분기 범위 */}
+        <QuarterRangePicker quarters={quarters} range={quarterRange} onChange={setQuarterRange} />
+
+        {/* 환율 */}
+        <div style={styles.ccyWrap}>
+          <span style={styles.ccyLabel}>단위</span>
+          <select style={styles.ccySel} value={ccy} onChange={e => setCcy(e.target.value)}>
+            {['KRW','USD','CNY','JPY','EUR'].map(c => (
+              <option key={c} value={c}>{CCY_LABELS[c]}</option>
+            ))}
           </select>
+          <div style={{...styles.rateDot, background: rateStatus==='live' ? '#4ade80' : rateStatus==='loading' ? '#fbbf24' : '#6b7280'}} />
+          <span style={styles.rateLabel}>{rateStatus==='live' ? '실시간' : rateStatus==='loading' ? '...' : '기준값'}</span>
         </div>
-        {/* 우측: 검색 + 구분/상태 필터 + 추가 버튼 */}
-        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-          <input
-            style={styles.searchInput}
-            placeholder="Case / 고객사 검색"
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
-          <select style={styles.ownerSel} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-            <option value="all">전체 구분</option>
-            {productCats.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <select style={styles.ownerSel} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="all">전체 상태</option>
-            <option value="won">계약</option>
-            <option value="active">진행중</option>
-            <option value="pending">대기</option>
-            <option value="drop">드랍</option>
-          </select>
-          {mode !== 'sim' && (
-            <button style={styles.btnAddProject} onClick={() => alert('프로젝트 추가 기능 준비 중')}>
-              + 프로젝트 추가
-            </button>
-          )}
-        </div>
+
+        {/* 검색 */}
+        <input style={styles.searchInput} placeholder="Case / 고객사 검색"
+          value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
+
+        {/* 담당자 */}
+        <select style={styles.ownerSel} value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
+          <option value="all">전체 담당자</option>
+          {owners.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+
+        {/* 구분 */}
+        <select style={styles.ownerSel} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+          <option value="all">전체 구분</option>
+          {productCats.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+
+        {/* 상태 */}
+        <select style={styles.ownerSel} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+          <option value="all">전체 상태</option>
+          <option value="won">계약</option>
+          <option value="active">진행중</option>
+          <option value="pending">대기</option>
+          <option value="drop">드랍</option>
+        </select>
+
+        {/* 추가 버튼 */}
+        <button style={styles.btnAddProject} onClick={() => setAddProjectOpen(true)}>
+          + 프로젝트 추가
+        </button>
       </div>
 
       {/* BODY */}
@@ -328,10 +333,33 @@ export default function App() {
           </div>
           <div style={{ overflowX:'auto' }}>
             <table style={styles.tbl}>
+              <colgroup>
+                <col style={{ width:'22%' }} /> {/* Case/고객사 */}
+                <col style={{ width:'13%' }} /> {/* 제품/국가 */}
+                <col style={{ width:'8%'  }} /> {/* 분기 */}
+                <col style={{ width:'8%'  }} /> {/* 상태 */}
+                <col style={{ width:'10%' }} /> {/* 확도 */}
+                <col style={{ width:'11%' }} /> {/* 계약금액 */}
+                <col style={{ width:'11%' }} /> {/* 반영금액 */}
+                <col style={{ width:'8%'  }} /> {/* 착수일 */}
+                <col style={{ width:'8%'  }} /> {/* 종료일 */}
+                <col style={{ width:'1%'  }} /> {/* 액션 */}
+              </colgroup>
               <thead>
                 <tr>
-                  {['Case / 고객사','제품 / 국가','분기','상태','확도','계약금액','반영금액','착수일','종료일',''].map((h,i) => (
-                    <th key={i} style={{...styles.th, textAlign: i>=5&&i<=6 ? 'right' : 'left'}}>{h}</th>
+                  {[
+                    ['Case / 고객사', 'left'],
+                    ['제품 / 국가',   'left'],
+                    ['분기',          'center'],
+                    ['상태',          'center'],
+                    ['확도',          'center'],
+                    ['계약금액',      'right'],
+                    ['반영금액',      'right'],
+                    ['착수일',        'center'],
+                    ['종료일',        'center'],
+                    ['',              'center'],
+                  ].map(([h, align], i) => (
+                    <th key={i} style={{...styles.th, textAlign: align}}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -431,6 +459,17 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* ADD PROJECT MODAL */}
+      {addProjectOpen && (
+        <AddProjectModal
+          quarters={quarters}
+          owners={owners}
+          session={session}
+          onClose={() => setAddProjectOpen(false)}
+          onSaved={() => { setAddProjectOpen(false); loadDeals() }}
+        />
+      )}
     </div>
   )
 }
@@ -483,14 +522,14 @@ function DealRow({ deal, orig, isSim, isOpen, mode, fmtK, onToggle }) {
         <div style={_styles.caseSub}>{deal.country}</div>
       </td>
       {/* 분기 */}
-      <td style={_styles.td}><span style={_styles.quarterChip}>{deal.quarter}</span></td>
+      <td style={{..._styles.td, textAlign:'center'}}><span style={_styles.quarterChip}>{deal.quarter}</span></td>
       {/* 상태 */}
-      <td style={_styles.td}>
+      <td style={{..._styles.td, textAlign:'center'}}>
         <span style={{..._styles.badge, background:st.bg, color:st.color}}>{st.label}</span>
       </td>
       {/* 확도 */}
-      <td style={_styles.td}>
-        <div style={_styles.confWrap}>
+      <td style={{..._styles.td, textAlign:'center'}}>
+        <div style={{..._styles.confWrap, justifyContent:'center'}}>
           <div style={_styles.confBg}><div style={{..._styles.confFill, width:confPct+'%', background:confColor}} /></div>
           <span style={{fontSize:11, color:'#9ca3af'}}>{confPct}%</span>
         </div>
@@ -512,12 +551,12 @@ function DealRow({ deal, orig, isSim, isOpen, mode, fmtK, onToggle }) {
         </> : <span style={_styles.amtNormal}>{fmtK(deal.reflected_amount || newReflect)}</span>}
       </td>
       {/* 착수일 */}
-      <td style={_styles.td}><span style={_styles.quarterChip}>{deal.start_month || '—'}</span></td>
+      <td style={{..._styles.td, textAlign:'center'}}><span style={_styles.quarterChip}>{deal.start_month || '—'}</span></td>
       {/* 종료일 */}
-      <td style={_styles.td}><span style={_styles.quarterChip}>{deal.end_month || '—'}</span></td>
+      <td style={{..._styles.td, textAlign:'center'}}><span style={_styles.quarterChip}>{deal.end_month || '—'}</span></td>
       {/* 액션 */}
-      <td style={_styles.td}>
-        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+      <td style={{..._styles.td, textAlign:'center'}}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
           {mode==='sim' && <span style={{..._styles.chevron, transform: isOpen ? 'rotate(180deg)' : 'none'}}>▾</span>}
           {isSim && <span style={_styles.simDot} title="시뮬 변경">●</span>}
         </div>
@@ -738,11 +777,11 @@ function ChildRow({ child, deal, fmtK, onEdit, onDelete }) {
       {/* 제품 / 국가 */}
       <td style={_styles.td} />
       {/* 분기 */}
-      <td style={_styles.td}><span style={{..._styles.quarterChip, color:'#a78bfa'}}>{child.quarter}</span></td>
+      <td style={{..._styles.td, textAlign:'center'}}><span style={{..._styles.quarterChip, color:'#a78bfa'}}>{child.quarter}</span></td>
       {/* 상태 */}
-      <td style={_styles.td}><span style={{..._styles.badge, background:'#1e1a35', color:'#a78bfa', fontSize:10}}>child</span></td>
+      <td style={{..._styles.td, textAlign:'center'}}><span style={{..._styles.badge, background:'#1e1a35', color:'#a78bfa', fontSize:10}}>child</span></td>
       {/* 확도 */}
-      <td style={_styles.td}><span style={{ fontSize:11, color:'#9ca3af' }}>{child.conf}%</span></td>
+      <td style={{..._styles.td, textAlign:'center'}}><span style={{ fontSize:11, color:'#9ca3af' }}>{child.conf}%</span></td>
       {/* 계약금액 */}
       <td style={{..._styles.td, textAlign:'right', color:'#a78bfa', fontWeight:500}}>{fmtK(child.amt)}</td>
       {/* 반영금액 */}
@@ -764,33 +803,123 @@ function ChildRow({ child, deal, fmtK, onEdit, onDelete }) {
 
 // ── 분기 범위 선택기 ──────────────────────────────
 function QuarterRangePicker({ quarters, range, onChange }) {
+  const trackRef = useRef(null)
+  const dragging = useRef(null) // 'start' | 'end' | null
+
   if (quarters.length === 0) return <span style={{ fontSize:12, color:'#6b7280' }}>분기 데이터 없음</span>
+
   const pct = i => quarters.length <= 1 ? 0 : (i / (quarters.length - 1)) * 100
+
+  // 마우스/터치 위치 → 인덱스 변환
+  const posToIdx = (clientX) => {
+    const rect = trackRef.current?.getBoundingClientRect()
+    if (!rect) return 0
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width))
+    return Math.round(ratio * (quarters.length - 1))
+  }
+
+  const onMouseDown = (handle) => (e) => {
+    e.preventDefault()
+    dragging.current = handle
+    const move = (ev) => {
+      const x = ev.touches ? ev.touches[0].clientX : ev.clientX
+      const idx = posToIdx(x)
+      if (dragging.current === 'start') onChange({ start: Math.min(idx, range.end), end: range.end })
+      else onChange({ start: range.start, end: Math.max(idx, range.start) })
+    }
+    const up = () => {
+      dragging.current = null
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    window.addEventListener('touchmove', move)
+    window.addEventListener('touchend', up)
+  }
+
+  // 분기 레이블: y25 q3 형태로 분리
+  const fmtTop = (q) => {
+    // q = "2025-Q3" → 연도 변경 시에만 연도 표시
+    const [yr] = q.split('-')
+    return yr.replace('20', 'y')
+  }
+  const fmtBot = (q) => q.split('-')[1]?.toLowerCase() // "q3"
+
+  // 연도가 바뀌는 지점 계산 (핸들 위 연도 표시용)
+  const yearOf = (q) => q?.split('-')[0] || ''
+
+  const dark = _styles === null ? true : undefined // fallback
+
   return (
     <div style={_styles.qrWrap}>
       <span style={_styles.qrLabel}>기간</span>
-      <div style={_styles.qrTrackWrap}>
-        <div style={_styles.qrTrack}>
-          <div style={{..._styles.qrFill, left:pct(range.start)+'%', width:(pct(range.end)-pct(range.start))+'%'}} />
-          {[range.start, range.end].map((idx, ti) => (
-            <input key={ti} type="range" min={0} max={quarters.length-1} value={idx} step={1}
-              style={_styles.qrThumb}
-              onChange={e => {
-                const v = Number(e.target.value)
-                if (ti===0) onChange({ start: Math.min(v, range.end), end: range.end })
-                else onChange({ start: range.start, end: Math.max(v, range.start) })
-              }} />
-          ))}
+      <div style={{ display:'flex', flexDirection:'column', gap:0, minWidth:220 }}>
+
+        {/* 핸들 위 연도 레이블 */}
+        <div style={{ position:'relative', height:16 }}>
+          {['start','end'].map(h => {
+            const idx = h === 'start' ? range.start : range.end
+            const q = quarters[idx]
+            const left = pct(idx)
+            return (
+              <span key={h} style={{
+                position:'absolute', fontSize:9, color:'#a78bfa', fontWeight:500,
+                transform:'translateX(-50%)', left: left+'%',
+                whiteSpace:'nowrap', pointerEvents:'none'
+              }}>{fmtTop(q)}</span>
+            )
+          })}
         </div>
-        <div style={_styles.qrLabels}>
+
+        {/* 트랙 */}
+        <div ref={trackRef} style={{ position:'relative', height:4, background:_styles.qrTrack.background, borderRadius:2, margin:'2px 0', cursor:'pointer' }}
+          onClick={e => {
+            // 트랙 클릭 시 가까운 핸들로 이동
+            const idx = posToIdx(e.clientX)
+            const dStart = Math.abs(idx - range.start)
+            const dEnd = Math.abs(idx - range.end)
+            if (dStart <= dEnd) onChange({ start: Math.min(idx, range.end), end: range.end })
+            else onChange({ start: range.start, end: Math.max(idx, range.start) })
+          }}>
+          {/* fill */}
+          <div style={{
+            position:'absolute', top:0, height:'100%',
+            left: pct(range.start)+'%',
+            width: (pct(range.end) - pct(range.start))+'%',
+            background:'#7c3aed', borderRadius:2, pointerEvents:'none'
+          }} />
+          {/* start 핸들 */}
+          <div onMouseDown={onMouseDown('start')} onTouchStart={onMouseDown('start')} style={{
+            position:'absolute', top:'50%', left: pct(range.start)+'%',
+            transform:'translate(-50%,-50%)',
+            width:12, height:12, borderRadius:'50%',
+            background:'#ffffff', border:'2px solid #7c3aed',
+            cursor:'grab', zIndex:2, boxShadow:'0 1px 4px rgba(0,0,0,0.3)'
+          }} />
+          {/* end 핸들 */}
+          <div onMouseDown={onMouseDown('end')} onTouchStart={onMouseDown('end')} style={{
+            position:'absolute', top:'50%', left: pct(range.end)+'%',
+            transform:'translate(-50%,-50%)',
+            width:12, height:12, borderRadius:'50%',
+            background:'#ffffff', border:'2px solid #7c3aed',
+            cursor:'grab', zIndex:2, boxShadow:'0 1px 4px rgba(0,0,0,0.3)'
+          }} />
+        </div>
+
+        {/* 분기 레이블 (아래) */}
+        <div style={{ display:'flex', justifyContent:'space-between', marginTop:3 }}>
           {quarters.map((q, i) => (
-            <span key={q} style={{..._styles.qrQLbl, ...(i>=range.start&&i<=range.end ? _styles.qrQLblOn : {})}}>
-              {q.replace('20','')}
-            </span>
+            <span key={q} style={{
+              fontSize:9, fontWeight: i>=range.start&&i<=range.end ? 500 : 400,
+              color: i>=range.start&&i<=range.end ? '#a78bfa' : _styles.qrQLbl.color,
+              minWidth:0, textAlign:'center'
+            }}>{fmtBot(q)}</span>
           ))}
         </div>
       </div>
-      <span style={_styles.qrResult}>{quarters[range.start]} – {quarters[range.end]}</span>
     </div>
   )
 }
@@ -832,8 +961,8 @@ function getStyles(dark) {
     navLeft: { display:'flex', alignItems:'center', gap:20 },
     logo: { fontSize:15, fontWeight:600, color:tx0, letterSpacing:'-0.02em' },
     logoAccent: { color:'#7c3aed' },
-    modeTabs: { display:'flex', background:bg2, borderRadius:8, padding:3, gap:2 },
-    modeTab: { fontSize:12, padding:'4px 14px', borderRadius:6, border:'none', background:'transparent', color:tx1, cursor:'pointer', fontFamily:"'Geist', sans-serif", transition:'all .15s' },
+    modeTabs: { display:'flex', alignItems:'center', background:bg2, borderRadius:8, padding:'2px 3px', gap:2, height:30, boxSizing:'border-box' },
+    modeTab: { fontSize:12, padding:'0 14px', height:'100%', borderRadius:6, border:'none', background:'transparent', color:tx1, cursor:'pointer', fontFamily:"'Geist', sans-serif", transition:'all .15s' },
     modeTabActive: { background: dark ? '#222' : '#ffffff', color:tx0, fontWeight:500 },
     modeTabSimActive: { background:'#1e1635', color:'#a78bfa', fontWeight:500 },
     navRight: { display:'flex', alignItems:'center', gap:10 },
@@ -857,12 +986,12 @@ function getStyles(dark) {
     btnDiscard: { fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid #3d2e00', background:'transparent', color:'#92740a', cursor:'pointer', fontFamily:"'Geist', sans-serif" },
     btnDiff: { fontSize:11, padding:'4px 12px', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif" },
 
-    // toolbar
-    toolbar: { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 24px', background: dark ? '#0f0f0f' : '#fafafa', borderBottom:'1px solid '+br, gap:12, flexWrap:'wrap' },
+    // toolbar — 단일 flex 줄
+    toolbar: { display:'flex', alignItems:'center', padding:'8px 24px', background: dark ? '#0f0f0f' : '#fafafa', borderBottom:'1px solid '+br, gap:8, flexWrap:'wrap' },
     toolbarLeft: { display:'flex', alignItems:'center', gap:10 },
     ownerSel: { fontSize:12, padding:'5px 10px', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif" },
-    searchInput: { fontSize:12, padding:'5px 10px', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif", outline:'none', width:160, '::placeholder': { color:tx3 } },
-    btnAddProject: { fontSize:12, padding:'5px 14px', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif", whiteSpace:'nowrap' },
+    searchInput: { fontSize:12, padding:'5px 10px', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif", outline:'none', width:148 },
+    btnAddProject: { fontSize:12, padding:'5px 14px', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif", whiteSpace:'nowrap', marginLeft:'auto' },
     modeLabel: { fontSize:11, color:tx1 },
 
     // body
@@ -886,7 +1015,7 @@ function getStyles(dark) {
     tblTitle: { fontSize:13, fontWeight:500, color:tx0 },
     simHint: { fontSize:11, color:'#fbbf24', display:'flex', alignItems:'center', gap:4 },
     tbl: { width:'100%', borderCollapse:'collapse', tableLayout:'fixed' },
-    th: { fontSize:11, fontWeight:500, color:tx3, padding:'7px 14px', borderBottom:'1px solid '+br, background:bg3, textAlign:'left', whiteSpace:'nowrap' },
+    th: { fontSize:11, fontWeight:500, color:tx3, padding:'7px 14px', borderBottom:'1px solid '+br, background:bg3, whiteSpace:'nowrap' },
     td: { fontSize:12, color:tx2, padding:'10px 14px', borderBottom:'1px solid '+(dark ? '#161616' : '#f0f0f0'), verticalAlign:'middle' },
     tr: { transition:'background .1s', cursor:'default' },
     trHover: { background: dark ? '#1a1a1a' : '#f0f0f0' },
@@ -1045,6 +1174,141 @@ function LoginScreen() {
         >
           {loading ? '로그인 중...' : '로그인'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+// ── 프로젝트 추가 모달 ────────────────────────────
+function AddProjectModal({ quarters, owners, session, onClose, onSaved }) {
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  const [caseName, setCaseName]         = useState('')
+  const [customer, setCustomer]         = useState('')
+  const [productCat, setProductCat]     = useState('')
+  const [country, setCountry]           = useState('')
+  const [quarter, setQuarter]           = useState(quarters[0] || '')
+  const [status, setStatus]             = useState('active')
+  const [amt, setAmt]                   = useState(0)
+  const [conf, setConf]                 = useState(50)
+  const [startMonth, setStartMonth]     = useState('')
+  const [endMonth, setEndMonth]         = useState('')
+  const [contractMonth, setContractMonth] = useState('')
+  const [comment, setComment]           = useState('')
+
+  const reflect = Math.round(amt * conf / 100)
+
+  const STATUS_OPTS = [
+    ['active','진행중','#60a5fa'],['won','계약','#4ade80'],
+    ['pending','대기','#fbbf24'],['drop','드랍','#f87171'],
+  ]
+
+  const handleSave = async () => {
+    if (!caseName.trim()) { setError('Case명을 입력해주세요'); return }
+    setSaving(true); setError(null)
+    const { error } = await supabase.from('projects').insert({
+      case_name: caseName,
+      customer,
+      product_cat: productCat,
+      country,
+      quarter,
+      status,
+      book_amount: amt,
+      probability: conf,
+      start_month: startMonth || null,
+      end_month: endMonth || null,
+      contract_month: contractMonth || null,
+      comment,
+      created_by: session?.user?.email?.split('@')[0] || 'Jake',
+      is_simulation: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    setSaving(false)
+    if (error) { setError(error.message); return }
+    onSaved()
+  }
+
+  const inp = {
+    fontSize:12, padding:'7px 9px', borderRadius:6,
+    border:'1px solid #2a2a2a', background:'#1a1a1a',
+    color:'#f0f0f0', fontFamily:"'Geist', sans-serif", outline:'none', width:'100%', boxSizing:'border-box'
+  }
+  const lbl = { fontSize:11, color:'#6b7280', marginBottom:4, display:'block' }
+  const field = { display:'flex', flexDirection:'column', gap:3 }
+  const grid4 = { display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:12, marginBottom:14 }
+  const grid2 = { display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:12, marginBottom:14 }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 }}>
+      <div style={{ background:'#111', border:'1px solid #2a1f5c', borderRadius:12, width:'100%', maxWidth:640, overflow:'hidden', fontFamily:"'Geist', sans-serif" }}>
+
+        {/* 헤더 */}
+        <div style={{ background:'#1e1635', padding:'13px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #2a1f5c' }}>
+          <span style={{ fontSize:13, fontWeight:500, color:'#c4b5fd' }}>+ 프로젝트 추가</span>
+          <button onClick={onClose} style={{ fontSize:20, color:'#7c3aed', cursor:'pointer', background:'none', border:'none', lineHeight:1 }}>×</button>
+        </div>
+
+        {/* 폼 */}
+        <div style={{ padding:'20px 20px 0' }}>
+          {/* Row 1: Case명 / 고객사 / 국가 / 제품구분 */}
+          <div style={grid4}>
+            <div style={field}><label style={lbl}>Case명 *</label><input style={inp} value={caseName} onChange={e => setCaseName(e.target.value)} /></div>
+            <div style={field}><label style={lbl}>고객사</label><input style={inp} value={customer} onChange={e => setCustomer(e.target.value)} /></div>
+            <div style={field}><label style={lbl}>국가</label><input style={inp} value={country} onChange={e => setCountry(e.target.value)} /></div>
+            <div style={field}><label style={lbl}>제품구분</label><input style={inp} value={productCat} onChange={e => setProductCat(e.target.value)} placeholder="PICK / AF / OTHER" /></div>
+          </div>
+
+          {/* Row 2: 분기 / 확률 / 계약금액 / 반영금액(읽기전용) */}
+          <div style={grid4}>
+            <div style={field}>
+              <label style={lbl}>분기</label>
+              <select style={{...inp}} value={quarter} onChange={e => setQuarter(e.target.value)}>
+                {[...quarters, '2026-Q1','2026-Q2','2026-Q3','2026-Q4'].filter((v,i,a)=>a.indexOf(v)===i).map(q => <option key={q} value={q}>{q}</option>)}
+              </select>
+            </div>
+            <div style={field}><label style={lbl}>확률 (%)</label><input style={inp} type="number" min={0} max={100} value={conf} onChange={e => setConf(Number(e.target.value))} /></div>
+            <div style={field}><label style={lbl}>계약금액 (K KRW)</label><input style={inp} type="number" step={1000} value={amt} onChange={e => setAmt(Number(e.target.value))} /></div>
+            <div style={field}><label style={lbl}>반영금액 (자동)</label><input style={{...inp, color:'#6b7280'}} value={reflect.toLocaleString() + ' K'} readOnly /></div>
+          </div>
+
+          {/* Row 3: 상태 */}
+          <div style={{ marginBottom:14 }}>
+            <label style={lbl}>상태</label>
+            <div style={{ display:'flex', gap:6 }}>
+              {STATUS_OPTS.map(([val, label, color]) => (
+                <button key={val}
+                  style={{ fontSize:11, padding:'4px 12px', borderRadius:5, border:`1px solid ${status===val ? color : '#2a2a2a'}`, background: status===val ? color+'18' : 'transparent', color: status===val ? color : '#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
+                  onClick={() => setStatus(val)}>{label}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Row 4: 착수월 / 종료월 / 예상계약월 */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:12, marginBottom:14 }}>
+            <div style={field}><label style={lbl}>착수월</label><input style={inp} value={startMonth} onChange={e => setStartMonth(e.target.value)} placeholder="2025-03" /></div>
+            <div style={field}><label style={lbl}>종료월</label><input style={inp} value={endMonth} onChange={e => setEndMonth(e.target.value)} placeholder="2026-02" /></div>
+            <div style={field}><label style={lbl}>예상 계약월</label><input style={inp} value={contractMonth} onChange={e => setContractMonth(e.target.value)} placeholder="2025-06" /></div>
+          </div>
+
+          {/* Row 5: 코멘트 */}
+          <div style={{ marginBottom:16 }}>
+            <label style={lbl}>코멘트</label>
+            <textarea style={{...inp, minHeight:56, resize:'vertical'}} value={comment} onChange={e => setComment(e.target.value)} />
+          </div>
+
+          {error && <div style={{ fontSize:12, color:'#f87171', marginBottom:12 }}>{error}</div>}
+        </div>
+
+        {/* 푸터 */}
+        <div style={{ padding:'12px 20px', background:'#0d0d0d', display:'flex', justifyContent:'flex-end', gap:8, borderTop:'1px solid #1f1f1f' }}>
+          <button onClick={onClose} style={{ fontSize:12, padding:'6px 14px', borderRadius:6, border:'1px solid #2a2a2a', background:'transparent', color:'#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}>취소</button>
+          <button onClick={handleSave} disabled={saving}
+            style={{ fontSize:12, padding:'6px 16px', borderRadius:6, border:'none', background: saving ? '#4c1d95' : '#7c3aed', color:'#f0f0f0', cursor: saving ? 'not-allowed':'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif" }}>
+            {saving ? '저장 중...' : '저장'}
+          </button>
+        </div>
       </div>
     </div>
   )
