@@ -10,18 +10,19 @@ const CCY_SYMS = { KRW: '', USD: '$', CNY: '¥', JPY: '¥', EUR: '€' }
 const CCY_LABELS = { KRW: '원화', USD: 'USD', CNY: 'CNY', JPY: 'JPY', EUR: 'EUR' }
 
 // ── 상태 배지 색상 ─────────────────────────────────
+// 다크/라이트 공용 배지 색상 (배경 투명도 방식)
 const STATUS_STYLE = {
-  won:     { bg: '#1a2e1a', color: '#4ade80', label: 'Won' },
-  active:  { bg: '#1a2433', color: '#60a5fa', label: '진행' },
-  drop:    { bg: '#2e1a1a', color: '#f87171', label: 'Drop' },
-  pending: { bg: '#2a2310', color: '#fbbf24', label: '대기' },
+  won:     { bg: 'rgba(74,222,128,0.15)',  color: '#16a34a', label: '계약' },
+  active:  { bg: 'rgba(96,165,250,0.15)',  color: '#2563eb', label: '진행중' },
+  drop:    { bg: 'rgba(248,113,113,0.15)', color: '#dc2626', label: '드랍' },
+  pending: { bg: 'rgba(251,191,36,0.15)',  color: '#d97706', label: '대기' },
 }
 
 const CATEGORY_STYLE = {
-  Pick:     { bg: '#1a2433', color: '#60a5fa' },
-  New:      { bg: '#1a2e1a', color: '#4ade80' },
-  Maintain: { bg: '#2a2310', color: '#fbbf24' },
-  Drop:     { bg: '#2e1a1a', color: '#f87171' },
+  Pick:     { bg: 'rgba(96,165,250,0.15)',  color: '#2563eb' },
+  New:      { bg: 'rgba(74,222,128,0.15)',  color: '#16a34a' },
+  Maintain: { bg: 'rgba(251,191,36,0.15)', color: '#d97706' },
+  Drop:     { bg: 'rgba(248,113,113,0.15)', color: '#dc2626' },
 }
 
 export default function App() {
@@ -40,9 +41,21 @@ export default function App() {
   const [diffOpen, setDiffOpen] = useState(false)
   const [commitMsg, setCommitMsg] = useState('')
   const [diffChecked, setDiffChecked] = useState({})
+  const [editingChild, setEditingChild] = useState(null)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [darkMode, setDarkMode] = useState(
     () => window.matchMedia('(prefers-color-scheme: dark)').matches
   )
+
+  // ── 인증 세션 ────────────────────────────────────
+  const [session, setSession] = useState(undefined) // undefined = 초기화 중
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => setSession(s ?? null))
+    return () => subscription.unsubscribe()
+  }, [])
 
   // ── 데이터 로드 ──────────────────────────────────
   const loadDeals = useCallback(async () => {
@@ -73,12 +86,26 @@ export default function App() {
   // ── 분기 목록 (DB 기반) ─────────────────────────
   const quarters = [...new Set(deals.map(d => d.quarter).filter(Boolean))].sort()
 
+  // 분기 범위 — 데이터 로드 시 전체 범위로 자동 설정
+  const quartersKey = quarters.join(',')
+  useEffect(() => {
+    if (quarters.length > 0) {
+      setQuarterRange({ start: 0, end: quarters.length - 1 })
+    }
+  }, [quartersKey])
+
   // ── 필터된 딜 ───────────────────────────────────
   const filteredDeals = deals.filter(d => {
     if (mode === 'personal' && d.created_by !== 'Jake') return false
     if (ownerFilter !== 'all' && d.created_by !== ownerFilter) return false
     const qi = quarters.indexOf(d.quarter)
     if (quarters.length > 0 && (qi < quarterRange.start || qi > quarterRange.end)) return false
+    if (categoryFilter !== 'all' && d.product_cat !== categoryFilter) return false
+    if (statusFilter !== 'all' && d.status !== statusFilter) return false
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      if (!(d.case_name||'').toLowerCase().includes(q) && !(d.customer||'').toLowerCase().includes(q)) return false
+    }
     return true
   })
 
@@ -88,16 +115,20 @@ export default function App() {
     if (!krw) return '—'
     const v = cvt(krw)
     const s = CCY_SYMS[ccy]
-    if (ccy === 'KRW') return s + Math.round(v / 1000).toLocaleString() + 'K'
-    if (ccy === 'JPY') return s + Math.round(v / 10000).toLocaleString() + '万'
-    return s + (v / 1000).toFixed(1) + 'K'
+    if (ccy === 'KRW') return s + Math.round(v).toLocaleString() + 'K'
+    if (ccy === 'JPY') return s + Math.round(v / 10).toLocaleString() + '万'
+    return s + v.toFixed(1) + 'K'
   }
 
   // ── KPI 계산 ─────────────────────────────────────
+  // 계약(won): 확정 매출에만 반영 (book_amount 풀 금액)
+  // 진행중(active): 예측 매출에만 반영 (계약금액 × 확률%)
+  // 대기(pending): 어디도 반영 안 함
+  // 드랍(drop): 어디도 반영 안 함
   const simDealMap = { ...Object.fromEntries(filteredDeals.map(d => [d.id, d])), ...simChanges }
   const activeForecast = Object.values(simDealMap)
-    .filter(d => d.status !== 'drop')
-    .reduce((s, d) => s + (d.reflected_amount || Math.round((d.book_amount * d.probability) / 100) || 0), 0)
+    .filter(d => d.status === 'active')
+    .reduce((s, d) => s + Math.round((d.book_amount * d.probability) / 100), 0)
   const wonAmount = filteredDeals
     .filter(d => d.status === 'won')
     .reduce((s, d) => s + (d.book_amount || 0), 0)
@@ -111,6 +142,9 @@ export default function App() {
 
   // 담당자 목록
   const owners = [...new Set(deals.map(d => d.created_by).filter(Boolean))]
+
+  // 제품 구분 목록 (DB 실제값 기반)
+  const productCats = [...new Set(deals.map(d => d.product_cat).filter(Boolean))].sort()
 
   // ── 다크/라이트 스타일 ───────────────────────────
   const styles = useMemo(() => getStyles(darkMode), [darkMode])
@@ -145,6 +179,13 @@ export default function App() {
     setMode('admin')
     loadDeals()
   }
+
+  if (session === undefined) return (
+    <div style={{ minHeight:'100vh', background:'#0a0a0a', display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ width:8, height:8, borderRadius:'50%', background:'#7c3aed' }} />
+    </div>
+  )
+  if (session === null) return <LoginScreen />
 
   if (loading) return (
     <div style={styles.loadWrap}>
@@ -198,6 +239,16 @@ export default function App() {
           </button>
           <div style={styles.avatar}>J</div>
           <span style={styles.userName}>Jake</span>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            style={{
+              fontSize:11, padding:'4px 10px', borderRadius:6,
+              border:'1px solid ' + (darkMode ? '#2a2a2a' : '#d1d5db'),
+              background:'transparent',
+              color: darkMode ? '#9ca3af' : '#6b7280',
+              cursor:'pointer', fontFamily:"'Geist', sans-serif"
+            }}
+          >로그아웃</button>
         </div>
       </nav>
 
@@ -230,10 +281,31 @@ export default function App() {
             {owners.map(o => <option key={o} value={o}>{o}</option>)}
           </select>
         </div>
-        <span style={styles.modeLabel}>
-          {mode==='personal' ? '개인 뷰 — 내 담당' : mode==='admin' ? '관리자 뷰 — 전체 파이프라인' : '시뮬레이션 모드'}
-          {' · '}<span style={{ color:'#6b7280' }}>{filteredDeals.length}건</span>
-        </span>
+        {/* 우측: 검색 + 구분/상태 필터 + 추가 버튼 */}
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+          <input
+            style={styles.searchInput}
+            placeholder="Case / 고객사 검색"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          <select style={styles.ownerSel} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+            <option value="all">전체 구분</option>
+            {productCats.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select style={styles.ownerSel} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="all">전체 상태</option>
+            <option value="won">계약</option>
+            <option value="active">진행중</option>
+            <option value="pending">대기</option>
+            <option value="drop">드랍</option>
+          </select>
+          {mode !== 'sim' && (
+            <button style={styles.btnAddProject} onClick={() => alert('프로젝트 추가 기능 준비 중')}>
+              + 프로젝트 추가
+            </button>
+          )}
+        </div>
       </div>
 
       {/* BODY */}
@@ -241,7 +313,7 @@ export default function App() {
 
         {/* KPI */}
         <div style={styles.kpiRow}>
-          <KpiCard dot="#4ade80" label="확정 매출" value={fmtK(wonAmount)} sub={`Won ${filteredDeals.filter(d=>d.status==='won').length}건`} />
+          <KpiCard dot="#4ade80" label="확정 매출" value={fmtK(wonAmount)} sub={`계약 ${filteredDeals.filter(d=>d.status==='won').length}건`} />
           <KpiCard dot="#60a5fa" label="예측 매출" value={fmtK(activeForecast)} sub="확도 반영 합산"
             sim={hasSimChanges && mode==='sim' ? { value: fmtK(simForecast), delta: activeForecast - (deals.reduce((s,d)=>s+(d.reflected_amount||0),0)) } : null} fmtK={fmtK} />
           <KpiCard dot="#fbbf24" label="사업계획 목표" value={fmtK(targetAmount)} sub="연간 합산" />
@@ -252,20 +324,20 @@ export default function App() {
         <div style={styles.tblCard}>
           <div style={styles.tblTop}>
             <span style={styles.tblTitle}>딜 목록</span>
-            {mode==='sim' && <span style={styles.simHint}>● 시뮬레이션 변경 하이라이트</span>}
+            {mode==='sim' && <span style={styles.simHint}>● 시뮬레이션 변경 사항</span>}
           </div>
           <div style={{ overflowX:'auto' }}>
             <table style={styles.tbl}>
               <thead>
                 <tr>
-                  {['상태','카테고리','Case / 고객사','제품','국가',`계약금액`,`반영금액`,'확도','담당자','분기',''].map((h,i) => (
+                  {['Case / 고객사','제품 / 국가','분기','상태','확도','계약금액','반영금액','착수일','종료일',''].map((h,i) => (
                     <th key={i} style={{...styles.th, textAlign: i>=5&&i<=6 ? 'right' : 'left'}}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {filteredDeals.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding:'32px', textAlign:'center', color:'#6b7280', fontSize:13 }}>데이터가 없습니다</td></tr>
+                  <tr><td colSpan={10} style={{ padding:'32px', textAlign:'center', color:'#6b7280', fontSize:13 }}>데이터가 없습니다</td></tr>
                 ) : filteredDeals.map(deal => {
                   const d = simChanges[deal.id] || deal
                   const isSim = !!simChanges[deal.id]
@@ -275,7 +347,7 @@ export default function App() {
                       fmtK={fmtK} onToggle={() => setEditingId(isOpen ? null : deal.id)} />,
                     isOpen && mode==='sim' && (
                       <tr key={deal.id+'-edit'}>
-                        <td colSpan={11} style={{ padding:0 }}>
+                        <td colSpan={10} style={{ padding:0 }}>
                           <EditPanel deal={d} fmtK={fmtK} quarters={quarters} owners={owners}
                             onApply={(updates) => applySimEdit(deal.id, updates)}
                             onCancel={() => setEditingId(null)}
@@ -283,9 +355,34 @@ export default function App() {
                         </td>
                       </tr>
                     ),
-                    ...(simChildren[deal.id]||[]).map((c,ci) => (
-                      <ChildRow key={deal.id+'-child-'+ci} child={c} deal={d} fmtK={fmtK} />
-                    ))
+                    ...(simChildren[deal.id]||[]).map((c,ci) => [
+                      <ChildRow key={deal.id+'-child-'+ci} child={c} deal={d} fmtK={fmtK}
+                        onEdit={() => setEditingChild({ dealId: deal.id, ci })}
+                        onDelete={() => setSimChildren(prev => ({
+                          ...prev,
+                          [deal.id]: prev[deal.id].filter((_,j) => j !== ci)
+                        }))}
+                      />,
+                      editingChild?.dealId === deal.id && editingChild?.ci === ci && (
+                        <tr key={deal.id+'-child-edit-'+ci}>
+                          <td colSpan={10} style={{ padding:0 }}>
+                            <ChildEditPanel
+                              child={c}
+                              quarters={quarters}
+                              fmtK={fmtK}
+                              onApply={(updated) => {
+                                setSimChildren(prev => ({
+                                  ...prev,
+                                  [deal.id]: prev[deal.id].map((x,j) => j===ci ? {...x, ...updated} : x)
+                                }))
+                                setEditingChild(null)
+                              }}
+                              onCancel={() => setEditingChild(null)}
+                            />
+                          </td>
+                        </tr>
+                      )
+                    ])
                   ]
                 })}
               </tbody>
@@ -347,7 +444,7 @@ function KpiCard({ dot, label, value, sub, sim, fmtK, isGap, achieveRate }) {
         <div style={{..._styles.kpiDot, background: gapColor || dot}} />
         <span style={_styles.kpiLabel}>{label}</span>
       </div>
-      <div style={{..._styles.kpiVal, color: gapColor || '#f0f0f0'}}>{value}</div>
+      <div style={{..._styles.kpiVal, ...(gapColor ? {color: gapColor} : {})}}>{value}</div>
       <div style={_styles.kpiSub}>{sub}</div>
       {sim && (
         <div style={_styles.kpiSim}>
@@ -364,41 +461,66 @@ function DealRow({ deal, orig, isSim, isOpen, mode, fmtK, onToggle }) {
   const st = STATUS_STYLE[deal.status] || STATUS_STYLE.active
   const ct = CATEGORY_STYLE[deal.category] || CATEGORY_STYLE.Pick
   const amtChanged = isSim && deal.book_amount !== orig.book_amount
+  const confChanged = isSim && deal.probability !== orig.probability
+  const origReflect = Math.round((orig.book_amount * orig.probability) / 100)
+  const newReflect = Math.round((deal.book_amount * deal.probability) / 100)
+  const reflectChanged = isSim && (amtChanged || confChanged)
   const confPct = deal.probability || 0
   const confColor = confPct >= 100 ? '#4ade80' : confPct >= 60 ? '#60a5fa' : confPct >= 30 ? '#fbbf24' : '#4b5563'
   return (
     <tr style={{..._styles.tr, ...(isSim ? _styles.trSim : {}), ...(isOpen ? _styles.trOpen : {})}}
       onClick={mode==='sim' ? onToggle : undefined}
-      onMouseEnter={e => { if(!isOpen) e.currentTarget.style.background = '#1a1a1a' }}
-      onMouseLeave={e => { e.currentTarget.style.background = isSim ? '#161820' : 'transparent' }}>
-      <td style={_styles.td}><span style={{..._styles.badge, background:st.bg, color:st.color}}>{st.label}</span></td>
-      <td style={_styles.td}><span style={{..._styles.badge, background:ct.bg, color:ct.color}}>{deal.category}</span></td>
+      onMouseEnter={e => { if(!isOpen) e.currentTarget.style.background = _styles.trHover.background }}
+      onMouseLeave={e => { e.currentTarget.style.background = isSim ? _styles.trSim.background : 'transparent' }}>
+      {/* Case / 고객사 (2라인) */}
       <td style={_styles.td}>
         <div style={_styles.caseName}>{deal.case_name}</div>
         <div style={_styles.caseSub}>{deal.customer}</div>
       </td>
-      <td style={_styles.td}><span style={_styles.tagSmall}>{deal.product_cat}</span></td>
-      <td style={_styles.td}><span style={_styles.tagSmall}>{deal.country}</span></td>
-      <td style={{..._styles.td, textAlign:'right'}}>
-        {amtChanged ? <>
-          <span style={_styles.amtStrike}>{fmtK(orig.book_amount)}</span>
-          <span style={_styles.amtNew}>{fmtK(deal.book_amount)}</span>
-        </> : <span style={_styles.amtNormal}>{fmtK(deal.book_amount)}</span>}
+      {/* 제품 / 국가 (2라인) */}
+      <td style={_styles.td}>
+        <div style={_styles.caseName}>{deal.product_cat}</div>
+        <div style={_styles.caseSub}>{deal.country}</div>
       </td>
-      <td style={{..._styles.td, textAlign:'right'}}>
-        <span style={_styles.amtNormal}>{fmtK(deal.reflected_amount || Math.round((deal.book_amount * deal.probability)/100))}</span>
+      {/* 분기 */}
+      <td style={_styles.td}><span style={_styles.quarterChip}>{deal.quarter}</span></td>
+      {/* 상태 */}
+      <td style={_styles.td}>
+        <span style={{..._styles.badge, background:st.bg, color:st.color}}>{st.label}</span>
       </td>
+      {/* 확도 */}
       <td style={_styles.td}>
         <div style={_styles.confWrap}>
           <div style={_styles.confBg}><div style={{..._styles.confFill, width:confPct+'%', background:confColor}} /></div>
           <span style={{fontSize:11, color:'#9ca3af'}}>{confPct}%</span>
         </div>
       </td>
-      <td style={_styles.td}><span style={_styles.ownerChip}>{deal.created_by}</span></td>
-      <td style={_styles.td}><span style={_styles.quarterChip}>{deal.quarter}</span></td>
+      {/* 계약금액 */}
+      <td style={{..._styles.td, textAlign:'right'}}>
+        {amtChanged ? <>
+          <span style={_styles.amtStrike}>{fmtK(orig.book_amount)}</span>
+          <span style={_styles.amtNew}>{fmtK(deal.book_amount)}</span>
+        </> : <span style={_styles.amtNormal}>{fmtK(deal.book_amount)}</span>}
+      </td>
+      {/* 반영금액 — 드랍은 '—' */}
+      <td style={{..._styles.td, textAlign:'right'}}>
+        {deal.status === 'drop' ? (
+          <span style={{..._styles.amtNormal, color:'#9ca3af'}}>—</span>
+        ) : reflectChanged ? <>
+          <span style={_styles.amtStrike}>{fmtK(origReflect)}</span>
+          <span style={_styles.amtNew}>{fmtK(newReflect)}</span>
+        </> : <span style={_styles.amtNormal}>{fmtK(deal.reflected_amount || newReflect)}</span>}
+      </td>
+      {/* 착수일 */}
+      <td style={_styles.td}><span style={_styles.quarterChip}>{deal.start_month || '—'}</span></td>
+      {/* 종료일 */}
+      <td style={_styles.td}><span style={_styles.quarterChip}>{deal.end_month || '—'}</span></td>
+      {/* 액션 */}
       <td style={_styles.td}>
-        {mode==='sim' && <span style={{..._styles.chevron, transform: isOpen ? 'rotate(180deg)' : 'none'}}>▾</span>}
-        {isSim && <span style={_styles.simTag}>수정</span>}
+        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+          {mode==='sim' && <span style={{..._styles.chevron, transform: isOpen ? 'rotate(180deg)' : 'none'}}>▾</span>}
+          {isSim && <span style={_styles.simDot} title="시뮬 변경">●</span>}
+        </div>
       </td>
     </tr>
   )
@@ -406,6 +528,15 @@ function DealRow({ deal, orig, isSim, isOpen, mode, fmtK, onToggle }) {
 
 // ── 인라인 편집 패널 ──────────────────────────────
 function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild }) {
+  const [caseName, setCaseName] = useState(deal.case_name || '')
+  const [customer, setCustomer] = useState(deal.customer || '')
+  const [category, setCategory] = useState(deal.category || 'Pick')
+  const [productCat, setProductCat] = useState(deal.product_cat || '')
+  const [country, setCountry] = useState(deal.country || 'KR')
+  const [contractMonth, setContractMonth] = useState(deal.contract_month || '')
+  const [startMonth, setStartMonth] = useState(deal.start_month || '')
+  const [endMonth, setEndMonth] = useState(deal.end_month || '')
+  const [comment, setComment] = useState(deal.comment || '')
   const [amt, setAmt] = useState(deal.book_amount || 0)
   const [conf, setConf] = useState(deal.probability || 0)
   const [quarter, setQuarter] = useState(deal.quarter || '')
@@ -415,29 +546,63 @@ function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild
   const reflect = Math.round(amt * conf / 100)
 
   const STATUS_OPTS = [
-    ['active','진행','#60a5fa'],['won','Won','#4ade80'],
-    ['drop','Drop','#f87171'],['pending','대기','#fbbf24']
+    ['active','진행중','#60a5fa'],['won','계약','#4ade80'],
+    ['drop','드랍','#f87171'],['pending','대기','#fbbf24']
   ]
+  const CATEGORY_OPTS = ['Pick','New','Maintain','Drop']
 
   return (
     <div style={_styles.editPanel}>
-      <div style={_styles.editGrid}>
+      {/* Row 1: Case명 / 고객사 / 구분 / 분기 */}
+      <div style={{..._styles.editGrid, gridTemplateColumns:'repeat(4,minmax(0,1fr))', marginBottom:10}}>
         <div style={_styles.editField}>
-          <label style={_styles.editLabel}>계약금액 (K KRW)</label>
-          <input style={_styles.editInput} type="number" value={amt} step={1000}
-            onChange={e => setAmt(Number(e.target.value))} />
-          <span style={_styles.editHint}>반영: {fmtK(reflect)}</span>
+          <label style={_styles.editLabel}>Case명</label>
+          <input style={_styles.editInput} value={caseName} onChange={e => setCaseName(e.target.value)} />
         </div>
         <div style={_styles.editField}>
-          <label style={_styles.editLabel}>확도 (%)</label>
-          <input style={_styles.editInput} type="number" value={conf} min={0} max={100}
-            onChange={e => setConf(Number(e.target.value))} />
+          <label style={_styles.editLabel}>고객사</label>
+          <input style={_styles.editInput} value={customer} onChange={e => setCustomer(e.target.value)} />
+        </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>구분</label>
+          <select style={_styles.editSelect} value={category} onChange={e => setCategory(e.target.value)}>
+            {CATEGORY_OPTS.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         <div style={_styles.editField}>
           <label style={_styles.editLabel}>분기</label>
           <select style={_styles.editSelect} value={quarter} onChange={e => setQuarter(e.target.value)}>
             {quarters.map(q => <option key={q} value={q}>{q}</option>)}
           </select>
+        </div>
+      </div>
+      {/* Row 2: 국가 / 제품구분 / 예상계약월 / 확률 */}
+      <div style={{..._styles.editGrid, gridTemplateColumns:'repeat(4,minmax(0,1fr))', marginBottom:10}}>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>고객사 국가</label>
+          <input style={_styles.editInput} value={country} onChange={e => setCountry(e.target.value)} />
+        </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>제품구분</label>
+          <input style={_styles.editInput} value={productCat} onChange={e => setProductCat(e.target.value)} />
+        </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>예상 계약월</label>
+          <input style={_styles.editInput} value={contractMonth} onChange={e => setContractMonth(e.target.value)} placeholder="2025-03" />
+        </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>확률 (%)</label>
+          <input style={_styles.editInput} type="number" value={conf} min={0} max={100}
+            onChange={e => setConf(Number(e.target.value))} />
+        </div>
+      </div>
+      {/* Row 3: 계약금액 / 상태 / 착수월 / 종료월 */}
+      <div style={{..._styles.editGrid, gridTemplateColumns:'repeat(4,minmax(0,1fr))', marginBottom:10}}>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>계약금액 (K KRW)</label>
+          <input style={_styles.editInput} type="number" value={amt} step={1000}
+            onChange={e => setAmt(Number(e.target.value))} />
+          <span style={_styles.editHint}>반영: {fmtK(reflect)}</span>
         </div>
         <div style={_styles.editField}>
           <label style={_styles.editLabel}>상태</label>
@@ -448,8 +613,21 @@ function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild
             ))}
           </div>
         </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>착수월</label>
+          <input style={_styles.editInput} value={startMonth} onChange={e => setStartMonth(e.target.value)} placeholder="2025-03" />
+        </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>종료월</label>
+          <input style={_styles.editInput} value={endMonth} onChange={e => setEndMonth(e.target.value)} placeholder="2026-02" />
+        </div>
       </div>
-
+      {/* Row 4: 코멘트 */}
+      <div style={{ marginBottom:12 }}>
+        <label style={_styles.editLabel}>코멘트</label>
+        <textarea style={{..._styles.editInput, width:'100%', minHeight:60, resize:'vertical', marginTop:4, boxSizing:'border-box'}}
+          value={comment} onChange={e => setComment(e.target.value)} />
+      </div>
       {/* 파생 딜 */}
       <button style={_styles.deriveBtn} onClick={() => setChildren(prev => [...prev, {amt:0, conf:40, quarter:quarters[0]||'2025-Q1'}])}>
         + 파생 딜 추가 (child)
@@ -498,7 +676,7 @@ function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild
         <span style={{ fontSize:11, color:'#6b7280' }}>커밋 전까지 실제 DB 불변</span>
         <div style={{ display:'flex', gap:8 }}>
           <button style={_styles.btnCancel} onClick={onCancel}>취소</button>
-          <button style={_styles.btnApply} onClick={() => { children.forEach(c => onAddChild(c)); onApply({book_amount:amt, probability:conf, quarter, status}) }}>
+          <button style={_styles.btnApply} onClick={() => { children.forEach(c => onAddChild(c)); onApply({case_name:caseName, customer, category, product_cat:productCat, country, contract_month:contractMonth, start_month:startMonth, end_month:endMonth, comment, book_amount:amt, probability:conf, quarter, status}) }}>
             시뮬에 반영
           </button>
         </div>
@@ -508,26 +686,78 @@ function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild
 }
 
 // ── Child 행 ──────────────────────────────────────
-function ChildRow({ child, deal, fmtK }) {
+function ChildEditPanel({ child, quarters, fmtK, onApply, onCancel }) {
+  const [amt, setAmt] = useState(child.amt || 0)
+  const [conf, setConf] = useState(child.conf || 40)
+  const [quarter, setQuarter] = useState(child.quarter || '')
+  const reflect = Math.round(amt * conf / 100)
   return (
-    <tr style={{ background:'#111318' }}>
-      <td style={_styles.td}><span style={{..._styles.badge, background:'#1e1a35', color:'#a78bfa', fontSize:10}}>child</span></td>
-      <td style={_styles.td} />
+    <div style={{..._styles.editPanel, borderTop:'1px solid #2a1f5c', borderLeft:'4px solid #7c3aed'}}>
+      <div style={{ fontSize:11, color:'#a78bfa', marginBottom:10, fontWeight:500 }}>↳ Child 딜 수정</div>
+      <div style={_styles.editGrid}>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>금액 (K)</label>
+          <input style={_styles.editInput} type="number" value={amt}
+            onChange={e => setAmt(Number(e.target.value))} />
+          <span style={_styles.editHint}>반영: {fmtK(reflect)}</span>
+        </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>확도 (%)</label>
+          <input style={_styles.editInput} type="number" value={conf} min={0} max={100}
+            onChange={e => setConf(Number(e.target.value))} />
+        </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>분기</label>
+          <select style={_styles.editSelect} value={quarter} onChange={e => setQuarter(e.target.value)}>
+            {[...quarters,'2026-Q3','2026-Q4','2027-Q1'].map(q => <option key={q} value={q}>{q}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={_styles.editFoot}>
+        <span style={{ fontSize:11, color:'#6b7280' }}>Child 딜 수정</span>
+        <div style={{ display:'flex', gap:8 }}>
+          <button style={_styles.btnCancel} onClick={onCancel}>취소</button>
+          <button style={_styles.btnApply} onClick={() => onApply({ amt, conf, quarter })}>반영</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ChildRow({ child, deal, fmtK, onEdit, onDelete }) {
+  return (
+    <tr style={_styles.childRowBg}>
+      {/* Case / 고객사 */}
       <td style={_styles.td}>
-        <div style={{ paddingLeft:16 }}>
-          <span style={{ fontSize:11, color:'#6b7280', marginRight:6 }}>↳</span>
-          <span style={_styles.caseName}>{deal.case_name}</span>
+        <div style={{ paddingLeft:12 }}>
+          <span style={{ fontSize:11, color:'#a78bfa', marginRight:4 }}>↳</span>
+          <span style={{..._styles.caseName, display:'inline'}}>{deal.case_name}</span>
           <div style={{..._styles.caseSub, color:'#7c6db0'}}>잔여분</div>
         </div>
       </td>
+      {/* 제품 / 국가 */}
       <td style={_styles.td} />
-      <td style={_styles.td} />
-      <td style={{..._styles.td, textAlign:'right', color:'#a78bfa', fontWeight:500}}>{fmtK(child.amt)}</td>
-      <td style={{..._styles.td, textAlign:'right', color:'#a78bfa'}}>{fmtK(Math.round(child.amt*child.conf/100))}</td>
+      {/* 분기 */}
+      <td style={_styles.td}><span style={{..._styles.quarterChip, color:'#a78bfa'}}>{child.quarter}</span></td>
+      {/* 상태 */}
+      <td style={_styles.td}><span style={{..._styles.badge, background:'#1e1a35', color:'#a78bfa', fontSize:10}}>child</span></td>
+      {/* 확도 */}
       <td style={_styles.td}><span style={{ fontSize:11, color:'#9ca3af' }}>{child.conf}%</span></td>
-      <td style={_styles.td}><span style={_styles.ownerChip}>{deal.created_by}</span></td>
-      <td style={{..._styles.td, color:'#a78bfa', fontWeight:500}}>{child.quarter}</td>
+      {/* 계약금액 */}
+      <td style={{..._styles.td, textAlign:'right', color:'#a78bfa', fontWeight:500}}>{fmtK(child.amt)}</td>
+      {/* 반영금액 */}
+      <td style={{..._styles.td, textAlign:'right', color:'#a78bfa'}}>{fmtK(Math.round(child.amt*child.conf/100))}</td>
+      {/* 착수일 */}
       <td style={_styles.td} />
+      {/* 종료일 */}
+      <td style={_styles.td} />
+      {/* 액션 */}
+      <td style={_styles.td}>
+        <div style={{ display:'flex', gap:4 }}>
+          {onEdit && <button style={_styles.childEditBtn} onClick={onEdit}>수정</button>}
+          {onDelete && <button style={_styles.childDelBtn} onClick={onDelete}>삭제</button>}
+        </div>
+      </td>
     </tr>
   )
 }
@@ -631,6 +861,8 @@ function getStyles(dark) {
     toolbar: { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 24px', background: dark ? '#0f0f0f' : '#fafafa', borderBottom:'1px solid '+br, gap:12, flexWrap:'wrap' },
     toolbarLeft: { display:'flex', alignItems:'center', gap:10 },
     ownerSel: { fontSize:12, padding:'5px 10px', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif" },
+    searchInput: { fontSize:12, padding:'5px 10px', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif", outline:'none', width:160, '::placeholder': { color:tx3 } },
+    btnAddProject: { fontSize:12, padding:'5px 14px', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif", whiteSpace:'nowrap' },
     modeLabel: { fontSize:11, color:tx1 },
 
     // body
@@ -652,11 +884,13 @@ function getStyles(dark) {
     tblCard: { background:bg1, border:'1px solid '+br, borderRadius:10, overflow:'hidden' },
     tblTop: { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'11px 16px', borderBottom:'1px solid '+br },
     tblTitle: { fontSize:13, fontWeight:500, color:tx0 },
-    simHint: { fontSize:11, color:'#92740a' },
+    simHint: { fontSize:11, color:'#fbbf24', display:'flex', alignItems:'center', gap:4 },
     tbl: { width:'100%', borderCollapse:'collapse', tableLayout:'fixed' },
     th: { fontSize:11, fontWeight:500, color:tx3, padding:'7px 14px', borderBottom:'1px solid '+br, background:bg3, textAlign:'left', whiteSpace:'nowrap' },
     td: { fontSize:12, color:tx2, padding:'10px 14px', borderBottom:'1px solid '+(dark ? '#161616' : '#f0f0f0'), verticalAlign:'middle' },
     tr: { transition:'background .1s', cursor:'default' },
+    trHover: { background: dark ? '#1a1a1a' : '#f0f0f0' },
+    simDot: { fontSize:8, color:'#fbbf24' },
     trSim: { background: dark ? '#161820' : '#f0f4ff' },
     trOpen: { background: dark ? '#161820' : '#f0f4ff' },
     badge: { display:'inline-block', fontSize:11, padding:'2px 7px', borderRadius:4, fontWeight:500 },
@@ -685,6 +919,9 @@ function getStyles(dark) {
     statusRow: { display:'flex', gap:5, flexWrap:'wrap' },
     statusBtn: { fontSize:11, padding:'3px 9px', borderRadius:5, border:'1px solid '+br2, background:'transparent', color:tx1, cursor:'pointer', fontFamily:"'Geist', sans-serif", transition:'all .1s' },
     deriveBtn: { fontSize:11, padding:'5px 12px', borderRadius:6, border:'1px dashed #2a1f5c', background:'transparent', color:'#7c3aed', cursor:'pointer', fontFamily:"'Geist', sans-serif", marginBottom:10 },
+    childRowBg: { background: dark ? '#111318' : '#f5f3ff' },
+    childEditBtn: { fontSize:10, padding:'2px 7px', borderRadius:4, border:'1px solid #7c3aed', background:'transparent', color:'#7c3aed', cursor:'pointer', fontFamily:"'Geist', sans-serif" },
+    childDelBtn: { fontSize:10, padding:'2px 7px', borderRadius:4, border:'1px solid #f87171', background:'transparent', color:'#f87171', cursor:'pointer', fontFamily:"'Geist', sans-serif" },
     childCard: { background: dark ? '#0a0a14' : '#f0eeff', border:'1px solid #2a1f5c', borderRadius:7, padding:'10px 12px', marginBottom:8 },
     childHeader: { display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 },
     childBadge: { fontSize:10, padding:'1px 6px', borderRadius:4, background:'#1e1635', color:'#a78bfa', fontWeight:500 },
@@ -727,4 +964,88 @@ function getStyles(dark) {
     commitInp: { flex:1, fontSize:12, padding:'7px 10px', borderRadius:6, border:'1px solid '+br2, background:bg1, color:tx0, fontFamily:"'Geist', sans-serif" },
     btnCommit: { fontSize:12, padding:'7px 16px', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif", whiteSpace:'nowrap' },
   }
+}
+
+// ── 로그인 화면 ───────────────────────────────────
+function LoginScreen() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  const handleLogin = async () => {
+    setLoading(true)
+    setError(null)
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) setError(error.message)
+    setLoading(false)
+    // 성공 시 onAuthStateChange가 session 감지 → App이 자동으로 메인 화면 렌더
+  }
+
+  return (
+    <div style={{
+      minHeight:'100vh', background:'#0a0a0a',
+      display:'flex', alignItems:'center', justifyContent:'center',
+      fontFamily:"'Geist', sans-serif"
+    }}>
+      <div style={{
+        background:'#111', border:'1px solid #1f1f1f', borderRadius:12,
+        padding:'36px 32px', width:340, display:'flex', flexDirection:'column', gap:16
+      }}>
+        {/* 로고 */}
+        <div style={{ fontSize:18, fontWeight:600, color:'#f0f0f0', marginBottom:4 }}>
+          BD <span style={{ color:'#7c3aed' }}>Pipeline</span>
+        </div>
+        <div style={{ fontSize:12, color:'#6b7280', marginBottom:8 }}>로그인하여 계속하세요</div>
+
+        {/* 이메일 */}
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          <label style={{ fontSize:11, color:'#6b7280' }}>이메일</label>
+          <input
+            type="email" value={email}
+            onChange={e => setEmail(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            placeholder="name@company.com"
+            style={{
+              fontSize:13, padding:'9px 11px', borderRadius:7,
+              border:'1px solid #2a2a2a', background:'#1a1a1a',
+              color:'#f0f0f0', outline:'none'
+            }}
+          />
+        </div>
+
+        {/* 비밀번호 */}
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          <label style={{ fontSize:11, color:'#6b7280' }}>비밀번호</label>
+          <input
+            type="password" value={password}
+            onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleLogin()}
+            placeholder="••••••••"
+            style={{
+              fontSize:13, padding:'9px 11px', borderRadius:7,
+              border:'1px solid #2a2a2a', background:'#1a1a1a',
+              color:'#f0f0f0', outline:'none'
+            }}
+          />
+        </div>
+
+        {/* 에러 */}
+        {error && <div style={{ fontSize:12, color:'#f87171' }}>{error}</div>}
+
+        {/* 로그인 버튼 */}
+        <button
+          onClick={handleLogin} disabled={loading}
+          style={{
+            fontSize:13, padding:'10px', borderRadius:7, border:'none',
+            background: loading ? '#4c1d95' : '#7c3aed',
+            color:'#f0f0f0', cursor: loading ? 'not-allowed' : 'pointer',
+            fontWeight:500, marginTop:4
+          }}
+        >
+          {loading ? '로그인 중...' : '로그인'}
+        </button>
+      </div>
+    </div>
+  )
 }
