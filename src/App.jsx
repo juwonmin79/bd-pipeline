@@ -9,6 +9,12 @@ const FALLBACK_RATES = { KRW: 1, USD: 1/1510, CNY: 1/217, JPY: 1/9.47, EUR: 1/17
 const CCY_SYMS = { KRW: '', USD: '$', CNY: '¥', JPY: '¥', EUR: '€' }
 const CCY_LABELS = { KRW: '원화', USD: 'USD', CNY: 'CNY', JPY: 'JPY', EUR: 'EUR' }
 
+// ── 유저 alias 헬퍼 ──────────────────────────────────
+const getAlias = (session) =>
+  session?.user?.user_metadata?.alias ||
+  session?.user?.email?.split('@')[0] ||
+  'unknown'
+
 // ── 상태 배지 색상 ─────────────────────────────────
 // 다크/라이트 공용 배지 색상 (배경 투명도 방식)
 const STATUS_STYLE = {
@@ -98,7 +104,7 @@ export default function App() {
   // ── 필터된 딜 ───────────────────────────────────
   const filteredDeals = deals.filter(d => {
     //if (mode === 'personal' && d.created_by !== 'Jake') return false
-    if (mode === 'personal' && d.created_by !== session?.user?.email?.split('@')[0]) return false
+    if (mode === 'personal' && d.created_by !== getAlias(session)) return false
     if (ownerFilter !== 'all' && d.created_by !== ownerFilter) return false
     const qi = quarters.indexOf(d.quarter)
     if (quarters.length > 0 && (qi < quarterRange.start || qi > quarterRange.end)) return false
@@ -265,7 +271,7 @@ export default function App() {
           {/* 유저 */}
           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
             <div style={styles.avatar}>J</div>
-            <span style={styles.userName}>{session?.user?.email?.split('@')[0] || 'Jake'}</span>
+            <span style={styles.userName}>{getAlias(session)}</span>
           </div>
         </div>
       </nav>
@@ -1142,16 +1148,42 @@ function getStyles(dark) {
 
 // ── 로그인 화면 ── Sprint 1 ─────────────────────────
 function LoginScreen({ darkMode, setDarkMode }) {
+  const [tab, setTab] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [alias, setAlias] = useState('')
+  const [aliasManuallyEdited, setAliasManuallyEdited] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
+
+  const handleEmailChange = (v) => {
+    setEmail(v)
+    if (tab === 'signup' && !aliasManuallyEdited) {
+      setAlias(v.split('@')[0] || '')
+    }
+  }
+  const handleAliasChange = (v) => {
+    setAlias(v)
+    setAliasManuallyEdited(true)
+  }
 
   const handleLogin = async () => {
-    setLoading(true)
-    setError(null)
+    setLoading(true); setError(null)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) setError(error.message)
+    setLoading(false)
+  }
+
+  const handleSignup = async () => {
+    if (!alias.trim()) { setError('얼라이어스를 입력해주세요'); return }
+    setLoading(true); setError(null); setSuccess(null)
+    const { error } = await supabase.auth.signUp({
+      email, password,
+      options: { data: { alias: alias.trim() } }
+    })
+    if (error) { setError(error.message) }
+    else { setSuccess('가입 완료! 이메일 인증 후 로그인해주세요.') }
     setLoading(false)
   }
 
@@ -1161,13 +1193,20 @@ function LoginScreen({ darkMode, setDarkMode }) {
   const cardBdr   = dk ? '#1f1f1f' : '#e5e7eb'
   const logoClr   = dk ? '#f0f0f0' : '#111827'
   const accent    = dk ? '#a78bfa' : '#7c3aed'
-  const subClr    = dk ? '#6b7280' : '#9ca3af'
   const lblClr    = '#6b7280'
   const inputBg   = dk ? '#1a1a1a' : '#f3f4f6'
   const inputBdr  = dk ? '#2a2a2a' : '#e5e7eb'
   const inputClr  = dk ? '#f0f0f0' : '#111827'
   const toggleBdr = dk ? '#2a2a2a' : '#e5e7eb'
   const toggleClr = dk ? '#9ca3af' : '#6b7280'
+  const tabBdr    = dk ? '#2a2a2a' : '#e5e7eb'
+
+  const inputStyle = {
+    fontSize:13, padding:'9px 11px', borderRadius:8,
+    border:`1px solid ${inputBdr}`, background: inputBg,
+    color: inputClr, outline:'none', fontFamily:"'Geist', sans-serif",
+    width:'100%', boxSizing:'border-box',
+  }
 
   return (
     <div style={{
@@ -1188,9 +1227,7 @@ function LoginScreen({ darkMode, setDarkMode }) {
             fontSize:11, padding:'3px 10px', borderRadius:5,
             border:`1px solid ${toggleBdr}`, background:'transparent',
             color: toggleClr, cursor:'pointer', fontFamily:"'Geist', sans-serif",
-          }}>
-            {dk ? '☀️ 라이트' : '🌙 다크'}
-          </button>
+          }}>{dk ? '☀️ 라이트' : '🌙 다크'}</button>
         </div>
 
         {/* 로고 */}
@@ -1198,55 +1235,63 @@ function LoginScreen({ darkMode, setDarkMode }) {
           <div style={{
             width:26, height:26, borderRadius:7,
             background:'linear-gradient(135deg,#175BFF,#8A2BFF)',
-            display:'flex', alignItems:'center', justifyContent:'center',
-            flexShrink:0,
+            display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
           }}>
             <span style={{ fontSize:11, fontWeight:700, color:'white', letterSpacing:'-0.5px' }}>BD</span>
           </div>
           Sales<span style={{ color: accent }}>Gear</span>
         </div>
 
-        {/* 이미지 슬롯 — 원하는 이미지 src로 교체하세요 */}
-        <img src="/logo.svg" alt="" style={{ width: 180, height: 180, display: 'block', margin: '0 auto 8px' }}/>
-        
+        {/* 이미지 슬롯 */}
+        <img src="/logo.svg" alt="" style={{ width:180, height:180, display:'block', margin:'0 auto 8px' }} />
+
+        {/* 탭 */}
+        <div style={{ display:'flex', borderBottom:`1px solid ${tabBdr}`, marginBottom:4 }}>
+          {[['login','로그인'],['signup','회원가입']].map(([t, label]) => (
+            <button key={t} onClick={() => { setTab(t); setError(null); setSuccess(null) }} style={{
+              flex:1, fontSize:13, padding:'8px 0', border:'none', background:'transparent',
+              color: tab===t ? accent : toggleClr,
+              fontWeight: tab===t ? 600 : 400,
+              borderBottom: tab===t ? `2px solid ${accent}` : '2px solid transparent',
+              cursor:'pointer', fontFamily:"'Geist', sans-serif", transition:'all .15s',
+              marginBottom:-1,
+            }}>{label}</button>
+          ))}
+        </div>
+
         {/* 이메일 */}
         <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
           <label style={{ fontSize:11, color: lblClr }}>이메일</label>
-          <input
-            type="email" value={email}
-            onChange={e => setEmail(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            placeholder="name@company.com"
-            style={{
-              fontSize:13, padding:'9px 11px', borderRadius:8,
-              border:`1px solid ${inputBdr}`, background: inputBg,
-              color: inputClr, outline:'none', fontFamily:"'Geist', sans-serif",
-            }}
-          />
+          <input type="email" value={email} onChange={e => handleEmailChange(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (tab==='login' ? handleLogin() : handleSignup())}
+            placeholder="name@company.com" style={inputStyle} />
         </div>
 
         {/* 비밀번호 */}
         <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
           <label style={{ fontSize:11, color: lblClr }}>비밀번호</label>
-          <input
-            type="password" value={password}
-            onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-            placeholder="••••••••"
-            style={{
-              fontSize:13, padding:'9px 11px', borderRadius:8,
-              border:`1px solid ${inputBdr}`, background: inputBg,
-              color: inputClr, outline:'none', fontFamily:"'Geist', sans-serif",
-            }}
-          />
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && (tab==='login' ? handleLogin() : handleSignup())}
+            placeholder="••••••••" style={inputStyle} />
         </div>
 
-        {/* 에러 */}
-        {error && <div style={{ fontSize:12, color:'#f87171' }}>{error}</div>}
+        {/* 얼라이어스 — 회원가입 탭에서만 */}
+        {tab === 'signup' && (
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            <label style={{ fontSize:11, color: lblClr }}>얼라이어스 <span style={{ color: accent }}>*</span></label>
+            <input type="text" value={alias} onChange={e => handleAliasChange(e.target.value)}
+              placeholder={email.split('@')[0] || '표시될 이름'}
+              style={inputStyle} />
+            <span style={{ fontSize:11, color: lblClr }}>담당자명으로 표시돼요 (예: jake.min, 박과장)</span>
+          </div>
+        )}
 
-        {/* 로그인 버튼 */}
-        <button
-          onClick={handleLogin} disabled={loading}
+        {/* 에러 / 성공 */}
+        {error && <div style={{ fontSize:12, color:'#f87171' }}>{error}</div>}
+        {success && <div style={{ fontSize:12, color:'#4ade80' }}>{success}</div>}
+
+        {/* 버튼 */}
+        <button onClick={tab === 'login' ? handleLogin : handleSignup} disabled={loading}
           style={{
             fontSize:13, padding:'10px', borderRadius:8, border:'none',
             background: loading ? '#4c1d95' : '#7c3aed',
@@ -1255,12 +1300,13 @@ function LoginScreen({ darkMode, setDarkMode }) {
             transition:'background .15s',
           }}
         >
-          {loading ? '로그인 중...' : '로그인'}
+          {loading ? (tab==='login' ? '로그인 중...' : '가입 중...') : (tab==='login' ? '로그인' : '회원가입')}
         </button>
       </div>
     </div>
   )
 }
+
 
 // ── 프로젝트 추가 모달 ── Sprint 2 ───────────────────
 function AddProjectModal({ quarters, owners, productCats, session, darkMode, onClose, onSaved }) {
