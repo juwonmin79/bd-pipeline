@@ -68,24 +68,17 @@ export default function App() {
   // ── 데이터 로드 ──────────────────────────────────
   const loadDeals = useCallback(async () => {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .eq('is_simulation', false)
-      .order('created_at', { ascending: true })
+    const [{ data, error }, { data: userData }] = await Promise.all([
+      supabase.from('projects').select('*').eq('is_simulation', false).order('created_at', { ascending: true }),
+      supabase.from('users').select('alias')
+    ])
     if (error) { setError(error.message); setLoading(false); return }
     setDeals(data || [])
+    setOwners((userData || []).map(u => u.alias).filter(Boolean))
     setLoading(false)
   }, [])
 
   useEffect(() => { loadDeals() }, [loadDeals])
-
-  // ── owners 로드 (users 테이블) ───────────────────
-  useEffect(() => {
-    supabase.from('users').select('alias').then(({ data }) => {
-      if (data) setOwners(data.map(u => u.alias).filter(Boolean))
-    })
-  }, [])
 
   // ── 환율 로드 ────────────────────────────────────
   useEffect(() => {
@@ -1329,7 +1322,7 @@ function AddProjectModal({ quarters, owners, productCats, session, darkMode, onC
   const [customer, setCustomer]         = useState('')
   const [productCat, setProductCat]     = useState('')
   const [country, setCountry]           = useState('')
-  const [quarter, setQuarter]           = useState(quarters[0] || '')
+  const [quarter, setQuarter]           = useState('')
   const [status, setStatus]             = useState('active')
   const [amt, setAmt]                   = useState(0)
   const [conf, setConf]                 = useState(0)
@@ -1348,7 +1341,6 @@ function AddProjectModal({ quarters, owners, productCats, session, darkMode, onC
 
   const handleSave = async () => {
     if (!caseName.trim()) { setError('Case명을 입력해주세요'); return }
-    if (!quarter) { setError('분기를 선택해주세요'); return } 
     setSaving(true); setError(null)
     const { error } = await supabase.from('projects').insert({
       case_name: caseName,
