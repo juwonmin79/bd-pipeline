@@ -97,7 +97,8 @@ export default function App() {
 
   // ── 필터된 딜 ───────────────────────────────────
   const filteredDeals = deals.filter(d => {
-    if (mode === 'personal' && d.created_by !== 'Jake') return false
+    //if (mode === 'personal' && d.created_by !== 'Jake') return false
+    if (mode === 'personal' && d.created_by !== session?.user?.email?.split('@')[0]) return false
     if (ownerFilter !== 'all' && d.created_by !== ownerFilter) return false
     const qi = quarters.indexOf(d.quarter)
     if (quarters.length > 0 && (qi < quarterRange.start || qi > quarterRange.end)) return false
@@ -164,13 +165,25 @@ export default function App() {
     for (const id of toCommit) {
       const change = simChanges[id]
       if (!change) continue
-      await supabase.from('projects').update({
-        book_amount: change.book_amount,
-        probability: change.probability,
-        quarter: change.quarter,
-        status: change.status,
-        updated_at: new Date().toISOString(),
+      const { data, error } = await supabase.from('projects').update({
+        case_name:      change.case_name,
+        customer:       change.customer,
+        category:       change.category,
+        product_cat:    change.product_cat,
+        country:        change.country,
+        contract_month: change.contract_month,
+        start_month:    change.start_month,
+        end_month:      change.end_month,
+        comment:        change.comment,
+        book_amount:    change.book_amount,
+        probability:    change.probability,
+        quarter:        change.quarter,
+        status:         change.status,
+        created_by:     change.created_by,
+        updated_at:     new Date().toISOString(),
       }).eq('id', id)
+      if (error) console.error('커밋 에러:', error) 
+        
     }
     setSimChanges({})
     setSimChildren({})
@@ -270,10 +283,10 @@ export default function App() {
           </div>
           <div style={{ display:'flex', gap:8 }}>
             <button style={styles.btnDiscard} onClick={() => { setSimChanges({}); setSimChildren({}); setMode('admin') }}>폐기</button>
-            <button style={styles.btnDiff} onClick={() => setDiffOpen(true)}>Diff 리뷰 →</button>
+            <button style={{...styles.btnDiff, background:'#fbbf24', border:'1px solid #fbbf24', color:'#000000'}} onClick={() => setDiffOpen(true)}>확정 리뷰 →</button>
           </div>
         </div>
-      )}
+      )}  
 
       {/* TOOLBAR: 분기 + 환율 + 검색 + 담당자 + 구분 + 상태 + 추가 */}
       <div style={styles.toolbar}>
@@ -338,22 +351,23 @@ export default function App() {
         {/* DEAL TABLE */}
         <div style={styles.tblCard}>
           <div style={styles.tblTop}>
-            <span style={styles.tblTitle}>딜 목록</span>
+            <span style={styles.tblTitle}>Gear 목록</span>
             {mode==='sim' && <span style={styles.simHint}>● 시뮬레이션 변경 사항</span>}
           </div>
           <div style={{ overflowX:'auto' }}>
             <table style={styles.tbl}>
               <colgroup>
-                <col style={{ width:'22%' }} /> {/* Case/고객사 */}
-                <col style={{ width:'13%' }} /> {/* 제품/국가 */}
-                <col style={{ width:'8%'  }} /> {/* 분기 */}
-                <col style={{ width:'8%'  }} /> {/* 상태 */}
-                <col style={{ width:'10%' }} /> {/* 확도 */}
-                <col style={{ width:'11%' }} /> {/* 계약금액 */}
-                <col style={{ width:'11%' }} /> {/* 반영금액 */}
+                <col style={{ width:'20%' }} /> {/* Case/고객사 */}
+                <col style={{ width:'11%' }} /> {/* 제품/국가 */}
+                <col style={{ width:'7%'  }} /> {/* 분기 */}
+                <col style={{ width:'7%'  }} /> {/* 상태 */}
+                <col style={{ width:'8%'  }} /> {/* 담당자 */}
+                <col style={{ width:'9%'  }} /> {/* 확도 */}
+                <col style={{ width:'10%' }} /> {/* 계약금액 */}
+                <col style={{ width:'10%' }} /> {/* 반영금액 */}
                 <col style={{ width:'8%'  }} /> {/* 착수일 */}
                 <col style={{ width:'8%'  }} /> {/* 종료일 */}
-                <col style={{ width:'1%'  }} /> {/* 액션 */}
+                <col style={{ width:'2%'  }} /> {/* 액션 */}
               </colgroup>
               <thead>
                 <tr>
@@ -362,6 +376,7 @@ export default function App() {
                     ['제품 / 국가',   'left'],
                     ['분기',          'center'],
                     ['상태',          'center'],
+                    ['담당자',        'center'],
                     ['확도',          'center'],
                     ['계약금액',      'right'],
                     ['반영금액',      'right'],
@@ -375,7 +390,7 @@ export default function App() {
               </thead>
               <tbody>
                 {filteredDeals.length === 0 ? (
-                  <tr><td colSpan={10} style={{ padding:'32px', textAlign:'center', color:'#6b7280', fontSize:13 }}>데이터가 없습니다</td></tr>
+                  <tr><td colSpan={11} style={{ padding:'32px', textAlign:'center', color:'#6b7280', fontSize:13 }}>데이터가 없습니다</td></tr>
                 ) : filteredDeals.map(deal => {
                   const d = simChanges[deal.id] || deal
                   const isSim = !!simChanges[deal.id]
@@ -385,8 +400,8 @@ export default function App() {
                       fmtK={fmtK} onToggle={() => setEditingId(isOpen ? null : deal.id)} />,
                     isOpen && mode==='sim' && (
                       <tr key={deal.id+'-edit'}>
-                        <td colSpan={10} style={{ padding:0 }}>
-                          <EditPanel deal={d} fmtK={fmtK} quarters={quarters} owners={owners}
+                        <td colSpan={11} style={{ padding:0 }}>
+                          <EditPanel deal={d} fmtK={fmtK} quarters={quarters} owners={owners} productCats={productCats}
                             onApply={(updates) => applySimEdit(deal.id, updates)}
                             onCancel={() => setEditingId(null)}
                             onAddChild={(child) => setSimChildren(prev => ({ ...prev, [deal.id]: [...(prev[deal.id]||[]), child] }))} />
@@ -403,7 +418,7 @@ export default function App() {
                       />,
                       editingChild?.dealId === deal.id && editingChild?.ci === ci && (
                         <tr key={deal.id+'-child-edit-'+ci}>
-                          <td colSpan={10} style={{ padding:0 }}>
+                          <td colSpan={11} style={{ padding:0 }}>
                             <ChildEditPanel
                               child={c}
                               quarters={quarters}
@@ -434,7 +449,7 @@ export default function App() {
         <div style={styles.overlay}>
           <div style={styles.diffModal}>
             <div style={styles.diffHeader}>
-              <span style={styles.diffTitle}>Diff 리뷰 — 커밋할 변경 선택</span>
+              <span style={styles.diffTitle}>확정 리뷰 — 커밋할 변경 선택</span>
               <button style={styles.diffClose} onClick={() => setDiffOpen(false)}>×</button>
             </div>
             {Object.keys(simChanges).length === 0 ? (
@@ -451,10 +466,20 @@ export default function App() {
                   <div style={{ flex:1 }}>
                     <div style={styles.diffName}>{orig.case_name} <span style={styles.diffCo}>{orig.customer}</span></div>
                     <div style={styles.diffRows}>
+                      {changed.case_name !== orig.case_name && <DiffRow field="Case명" before={orig.case_name} after={changed.case_name} />}
+                      {changed.customer !== orig.customer && <DiffRow field="고객사" before={orig.customer} after={changed.customer} />}
+                      {changed.category !== orig.category && <DiffRow field="구분" before={orig.category} after={changed.category} />}
+                      {changed.product_cat !== orig.product_cat && <DiffRow field="제품구분" before={orig.product_cat} after={changed.product_cat} />}
+                      {changed.country !== orig.country && <DiffRow field="국가" before={orig.country} after={changed.country} />}
+                      {changed.contract_month !== orig.contract_month && <DiffRow field="예상계약월" before={orig.contract_month} after={changed.contract_month} />}
+                      {changed.start_month !== orig.start_month && <DiffRow field="착수월" before={orig.start_month} after={changed.start_month} />}
+                      {changed.end_month !== orig.end_month && <DiffRow field="종료월" before={orig.end_month} after={changed.end_month} />}
+                      {changed.comment !== orig.comment && <DiffRow field="코멘트" before={orig.comment} after={changed.comment} />}
                       {changed.book_amount !== orig.book_amount && <DiffRow field="금액" before={fmtK(orig.book_amount)} after={fmtK(changed.book_amount)} />}
                       {changed.probability !== orig.probability && <DiffRow field="확도" before={orig.probability+'%'} after={changed.probability+'%'} />}
                       {changed.quarter !== orig.quarter && <DiffRow field="분기" before={orig.quarter} after={changed.quarter} />}
                       {changed.status !== orig.status && <DiffRow field="상태" before={orig.status} after={changed.status} />}
+                      {changed.created_by !== orig.created_by && <DiffRow field="담당자" before={orig.created_by} after={changed.created_by} />}
                       {(simChildren[id]||[]).length > 0 && <DiffRow field="파생딜" before="없음" after={`${simChildren[id].length}건 child`} />}
                     </div>
                   </div>
@@ -475,6 +500,7 @@ export default function App() {
         <AddProjectModal
           quarters={quarters}
           owners={owners}
+          productCats={productCats}
           session={session}
           darkMode={darkMode}
           onClose={() => setAddProjectOpen(false)}
@@ -538,6 +564,10 @@ function DealRow({ deal, orig, isSim, isOpen, mode, fmtK, onToggle }) {
       <td style={{..._styles.td, textAlign:'center'}}>
         <span style={{..._styles.badge, background:st.bg, color:st.color}}>{st.label}</span>
       </td>
+      {/* 담당자 */}
+      <td style={{..._styles.td, textAlign:'center'}}>
+        <span style={_styles.ownerChip}>{deal.created_by || '—'}</span>
+      </td>
       {/* 확도 */}
       <td style={{..._styles.td, textAlign:'center'}}>
         <div style={{..._styles.confWrap, justifyContent:'center'}}>
@@ -577,7 +607,7 @@ function DealRow({ deal, orig, isSim, isOpen, mode, fmtK, onToggle }) {
 }
 
 // ── 인라인 편집 패널 ──────────────────────────────
-function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild }) {
+function EditPanel({ deal, fmtK, quarters, owners, productCats, onApply, onCancel, onAddChild }) {
   const [caseName, setCaseName] = useState(deal.case_name || '')
   const [customer, setCustomer] = useState(deal.customer || '')
   const [category, setCategory] = useState(deal.category || 'Pick')
@@ -591,6 +621,7 @@ function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild
   const [conf, setConf] = useState(deal.probability || 0)
   const [quarter, setQuarter] = useState(deal.quarter || '')
   const [status, setStatus] = useState(deal.status || 'active')
+  const [createdBy, setCreatedBy] = useState(deal.created_by || '')
   const [children, setChildren] = useState([])
 
   const reflect = Math.round(amt * conf / 100)
@@ -603,7 +634,7 @@ function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild
 
   return (
     <div style={_styles.editPanel}>
-      {/* Row 1: Case명 / 고객사 / 구분 / 분기 */}
+      {/* Row 1: Case명 / 고객사 / 제품구분 / 국가 */}
       <div style={{..._styles.editGrid, gridTemplateColumns:'repeat(4,minmax(0,1fr))', marginBottom:10}}>
         <div style={_styles.editField}>
           <label style={_styles.editLabel}>Case명</label>
@@ -614,45 +645,55 @@ function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild
           <input style={_styles.editInput} value={customer} onChange={e => setCustomer(e.target.value)} />
         </div>
         <div style={_styles.editField}>
-          <label style={_styles.editLabel}>구분</label>
-          <select style={_styles.editSelect} value={category} onChange={e => setCategory(e.target.value)}>
-            {CATEGORY_OPTS.map(c => <option key={c} value={c}>{c}</option>)}
+          <label style={_styles.editLabel}>고객사 국가</label>
+          <input style={_styles.editInput} value={country} onChange={e => setCountry(e.target.value)} />
+        </div>        
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>제품구분</label>
+          <select style={_styles.editSelect} value={productCat} onChange={e => setProductCat(e.target.value)}>
+            {productCats.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
+      </div>
+      {/* Row 2: 분기 / 예상계약월 / 확률 / 계약금액*/}
+      <div style={{..._styles.editGrid, gridTemplateColumns:'repeat(4,minmax(0,1fr))', marginBottom:10}}>
         <div style={_styles.editField}>
           <label style={_styles.editLabel}>분기</label>
           <select style={_styles.editSelect} value={quarter} onChange={e => setQuarter(e.target.value)}>
             {quarters.map(q => <option key={q} value={q}>{q}</option>)}
           </select>
         </div>
-      </div>
-      {/* Row 2: 국가 / 제품구분 / 예상계약월 / 확률 */}
-      <div style={{..._styles.editGrid, gridTemplateColumns:'repeat(4,minmax(0,1fr))', marginBottom:10}}>
-        <div style={_styles.editField}>
-          <label style={_styles.editLabel}>고객사 국가</label>
-          <input style={_styles.editInput} value={country} onChange={e => setCountry(e.target.value)} />
-        </div>
-        <div style={_styles.editField}>
-          <label style={_styles.editLabel}>제품구분</label>
-          <input style={_styles.editInput} value={productCat} onChange={e => setProductCat(e.target.value)} />
-        </div>
         <div style={_styles.editField}>
           <label style={_styles.editLabel}>예상 계약월</label>
-          <input style={_styles.editInput} value={contractMonth} onChange={e => setContractMonth(e.target.value)} placeholder="2025-03" />
+          <input style={_styles.editInput} value={contractMonth} onChange={e => setContractMonth(e.target.value)} type="month" />
         </div>
         <div style={_styles.editField}>
           <label style={_styles.editLabel}>확률 (%)</label>
           <input style={_styles.editInput} type="number" value={conf} min={0} max={100}
             onChange={e => setConf(Number(e.target.value))} />
         </div>
-      </div>
-      {/* Row 3: 계약금액 / 상태 / 착수월 / 종료월 */}
-      <div style={{..._styles.editGrid, gridTemplateColumns:'repeat(4,minmax(0,1fr))', marginBottom:10}}>
         <div style={_styles.editField}>
           <label style={_styles.editLabel}>계약금액 (K KRW)</label>
           <input style={_styles.editInput} type="number" value={amt} step={1000}
             onChange={e => setAmt(Number(e.target.value))} />
           <span style={_styles.editHint}>반영: {fmtK(reflect)}</span>
+        </div>
+      </div>
+      {/* Row 3: 착수월 / 종료월 / 담당자 / 상태 */}
+      <div style={{..._styles.editGrid, gridTemplateColumns:'1fr 1fr 1fr 2fr', marginBottom:10}}>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>착수월</label>
+          <input style={_styles.editInput} value={startMonth} onChange={e => setStartMonth(e.target.value)} type="month" />
+        </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>종료월</label>
+          <input style={_styles.editInput} value={endMonth} onChange={e => setEndMonth(e.target.value)} type="month" />
+        </div>
+        <div style={_styles.editField}>
+          <label style={_styles.editLabel}>담당자</label>
+          <select style={_styles.editSelect} value={createdBy} onChange={e => setCreatedBy(e.target.value)}>
+            {owners.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
         </div>
         <div style={_styles.editField}>
           <label style={_styles.editLabel}>상태</label>
@@ -662,14 +703,6 @@ function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild
                 onClick={() => setStatus(val)}>{label}</button>
             ))}
           </div>
-        </div>
-        <div style={_styles.editField}>
-          <label style={_styles.editLabel}>착수월</label>
-          <input style={_styles.editInput} value={startMonth} onChange={e => setStartMonth(e.target.value)} placeholder="2025-03" />
-        </div>
-        <div style={_styles.editField}>
-          <label style={_styles.editLabel}>종료월</label>
-          <input style={_styles.editInput} value={endMonth} onChange={e => setEndMonth(e.target.value)} placeholder="2026-02" />
         </div>
       </div>
       {/* Row 4: 코멘트 */}
@@ -726,7 +759,7 @@ function EditPanel({ deal, fmtK, quarters, owners, onApply, onCancel, onAddChild
         <span style={{ fontSize:11, color:'#6b7280' }}>커밋 전까지 실제 DB 불변</span>
         <div style={{ display:'flex', gap:8 }}>
           <button style={_styles.btnCancel} onClick={onCancel}>취소</button>
-          <button style={_styles.btnApply} onClick={() => { children.forEach(c => onAddChild(c)); onApply({case_name:caseName, customer, category, product_cat:productCat, country, contract_month:contractMonth, start_month:startMonth, end_month:endMonth, comment, book_amount:amt, probability:conf, quarter, status}) }}>
+          <button style={_styles.btnApply} onClick={() => { children.forEach(c => onAddChild(c)); onApply({case_name:caseName, customer, category, product_cat:productCat, country, contract_month:contractMonth, start_month:startMonth, end_month:endMonth, comment, book_amount:amt, probability:conf, quarter, status, created_by:createdBy}) }}>
             시뮬에 반영
           </button>
         </div>
@@ -853,10 +886,10 @@ function QuarterRangePicker({ quarters, range, onChange }) {
 
   // 분기 레이블: y25 q3 형태로 분리
   const fmtTop = (q) => {
-    // q = "2025-Q3" → 연도 변경 시에만 연도 표시
-    const [yr] = q.split('-')
-    return yr.replace('20', 'y')
-  }
+  if (!q) return ''
+  const [yr] = q.split('-')
+  return yr.replace('20', 'y')
+}
   const fmtBot = (q) => q.split('-')[1]?.toLowerCase() // "q3"
 
   // 연도가 바뀌는 지점 계산 (핸들 위 연도 표시용)
@@ -976,7 +1009,7 @@ function getStyles(dark) {
     modeTabs: { display:'flex', alignItems:'center', background:bg2, borderRadius:8, padding:'2px 3px', gap:2, height:30, boxSizing:'border-box' },
     modeTab: { fontSize:12, padding:'0 14px', height:'100%', borderRadius:6, border:'none', background:'transparent', color:tx1, cursor:'pointer', fontFamily:"'Geist', sans-serif", transition:'all .15s' },
     modeTabActive: { background: dark ? '#222' : '#ffffff', color:tx0, fontWeight:500 },
-    modeTabSimActive: { background:'#1e1635', color:'#a78bfa', fontWeight:500 },
+    modeTabSimActive: { background: dark ? '#1e1635' : '#ede9fe', color: dark ? '#a78bfa' : '#5b21b6', fontWeight:500 },
     navRight: { display:'flex', alignItems:'center', gap:10 },
 
     // ccy
@@ -993,10 +1026,10 @@ function getStyles(dark) {
     simBannerLeft: { display:'flex', alignItems:'center', gap:10 },
     simPulse: { width:7, height:7, borderRadius:'50%', background:'#fbbf24' },
     simBannerTitle: { fontSize:12, fontWeight:500, color:'#fcd34d' },
-    simBannerSub: { fontSize:11, color:'#92740a' },
-    chgPill: { fontSize:11, background:'#3d2e00', color:'#fbbf24', padding:'2px 8px', borderRadius:20, fontWeight:500 },
-    btnDiscard: { fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid #3d2e00', background:'transparent', color:'#92740a', cursor:'pointer', fontFamily:"'Geist', sans-serif" },
-    btnDiff: { fontSize:11, padding:'4px 12px', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif" },
+    simBannerSub: { fontSize:11, color:'#fcd34d' },
+    chgPill: { fontSize:11, background:'#3d2e00', color:'#fcd34d', padding:'2px 8px', borderRadius:20, fontWeight:500 },
+    btnDiscard: { fontSize:11, padding:'4px 10px', borderRadius:6, border:'1px solid #fcd34d', background:'transparent', color:'#fcd34d', cursor:'pointer', fontFamily:"'Geist', sans-serif" },
+    btnDiff: { fontSize:11, padding:'4px 12px', borderRadius:6, border:'1px solid #fcd34d', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif" },
 
     // toolbar — 단일 flex 줄
     toolbar: { display:'flex', alignItems:'center', padding:'8px 24px', background: dark ? '#0f0f0f' : '#fafafa', borderBottom:'1px solid '+br, gap:8, flexWrap:'wrap' },
@@ -1088,8 +1121,8 @@ function getStyles(dark) {
     // diff modal
     overlay: { position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 },
     diffModal: { background:bg1, border:'1px solid #2a1f5c', borderRadius:12, width:'100%', maxWidth:540, overflow:'hidden' },
-    diffHeader: { background:'#1e1635', padding:'13px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #2a1f5c' },
-    diffTitle: { fontSize:13, fontWeight:500, color:'#c4b5fd' },
+    diffHeader: { background: dark ? '#1e1635' : '#f5f3ff', padding:'13px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:`1px solid ${dark ? '#2a1f5c' : '#e5e7eb'}` },
+    diffTitle: { fontSize:13, fontWeight:500, color: dark ? '#c4b5fd' : '#5b21b6' },
     diffClose: { fontSize:20, color:'#7c3aed', cursor:'pointer', background:'none', border:'none', lineHeight:1, fontFamily:"'Geist', sans-serif" },
     diffItem: { padding:'13px 18px', borderBottom:'1px solid '+br, display:'flex', gap:10, alignItems:'flex-start' },
     diffChk: { width:16, height:16, borderRadius:4, border:'1px solid '+br2, background:bg1, flexShrink:0, marginTop:1, display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', fontSize:10, color:tx0 },
@@ -1230,7 +1263,7 @@ function LoginScreen({ darkMode, setDarkMode }) {
 }
 
 // ── 프로젝트 추가 모달 ── Sprint 2 ───────────────────
-function AddProjectModal({ quarters, owners, session, darkMode, onClose, onSaved }) {
+function AddProjectModal({ quarters, owners, productCats, session, darkMode, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
@@ -1238,14 +1271,15 @@ function AddProjectModal({ quarters, owners, session, darkMode, onClose, onSaved
   const [customer, setCustomer]         = useState('')
   const [productCat, setProductCat]     = useState('')
   const [country, setCountry]           = useState('')
-  const [quarter, setQuarter]           = useState(quarters[0] || '')
+  const [quarter, setQuarter]           = useState('')
   const [status, setStatus]             = useState('active')
   const [amt, setAmt]                   = useState(0)
-  const [conf, setConf]                 = useState(50)
+  const [conf, setConf]                 = useState(0)
   const [startMonth, setStartMonth]     = useState('')
   const [endMonth, setEndMonth]         = useState('')
   const [contractMonth, setContractMonth] = useState('')
   const [comment, setComment]           = useState('')
+  const [createdBy, setCreatedBy]       = useState('')
 
   const reflect = Math.round(amt * conf / 100)
 
@@ -1270,7 +1304,7 @@ function AddProjectModal({ quarters, owners, session, darkMode, onClose, onSaved
       end_month: endMonth || null,
       contract_month: contractMonth || null,
       comment,
-      created_by: session?.user?.email?.split('@')[0] || 'Jake',
+      created_by: createdBy || getAlias(session),
       is_simulation: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -1316,47 +1350,58 @@ function AddProjectModal({ quarters, owners, session, darkMode, onClose, onSaved
 
         {/* 폼 */}
         <div style={{ padding:'20px 20px 0' }}>
-          {/* Row 1: Case명 / 고객사 / 국가 / 제품구분 */}
+          {/* Row 1: Case명 / 고객사 / 고객사 국가 / 제품구분 */}
           <div style={grid4}>
             <div style={field}><label style={lbl}>Case명 *</label><input style={inp} value={caseName} onChange={e => setCaseName(e.target.value)} /></div>
             <div style={field}><label style={lbl}>고객사</label><input style={inp} value={customer} onChange={e => setCustomer(e.target.value)} /></div>
-            <div style={field}><label style={lbl}>국가</label><input style={inp} value={country} onChange={e => setCountry(e.target.value)} /></div>
-            <div style={field}><label style={lbl}>제품구분</label><input style={inp} value={productCat} onChange={e => setProductCat(e.target.value)} placeholder="PICK / AF / OTHER" /></div>
+            <div style={field}><label style={lbl}>고객사 국가</label><input style={inp} value={country} onChange={e => setCountry(e.target.value)} /></div>
+            <div style={field}>
+              <label style={lbl}>제품구분</label>
+              <select style={{...inp}} value={productCat} onChange={e => setProductCat(e.target.value)}>
+                <option value="">선택</option>
+                {(productCats||[]).map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
           </div>
 
-          {/* Row 2: 분기 / 확률 / 계약금액 / 반영금액(읽기전용) */}
-          <div style={grid4}>
+          {/* Row 2: 분기 / 예상계약월 / 확률 / 계약금액 / 반영금액 */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(5,minmax(0,1fr))', gap:12, marginBottom:14 }}>
             <div style={field}>
               <label style={lbl}>분기</label>
               <select style={{...inp}} value={quarter} onChange={e => setQuarter(e.target.value)}>
                 {[...quarters, '2026-Q1','2026-Q2','2026-Q3','2026-Q4'].filter((v,i,a)=>a.indexOf(v)===i).map(q => <option key={q} value={q}>{q}</option>)}
               </select>
             </div>
+            <div style={field}><label style={lbl}>예상 계약월</label><input style={inp} type="month" value={contractMonth} onChange={e => setContractMonth(e.target.value)} /></div>
             <div style={field}><label style={lbl}>확률 (%)</label><input style={inp} type="number" min={0} max={100} value={conf} onChange={e => setConf(Number(e.target.value))} /></div>
             <div style={field}><label style={lbl}>계약금액 (K KRW)</label><input style={inp} type="number" step={1000} value={amt} onChange={e => setAmt(Number(e.target.value))} /></div>
             <div style={field}><label style={lbl}>반영금액 (자동)</label><input style={{...inp, color:'#6b7280'}} value={reflect.toLocaleString() + ' K'} readOnly /></div>
           </div>
 
-          {/* Row 3: 상태 */}
-          <div style={{ marginBottom:14 }}>
-            <label style={lbl}>상태</label>
-            <div style={{ display:'flex', gap:6 }}>
-              {STATUS_OPTS.map(([val, label, color]) => (
-                <button key={val}
-                  style={{ fontSize:11, padding:'4px 12px', borderRadius:5, border:`1px solid ${status===val ? color : inactiveBdr}`, background: status===val ? color+'18' : 'transparent', color: status===val ? color : '#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
-                  onClick={() => setStatus(val)}>{label}</button>
-              ))}
+          {/* Row 3: 착수월 / 종료월 / 담당자 / 상태 */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 2fr', gap:12, marginBottom:14 }}>
+            <div style={field}><label style={lbl}>착수월</label><input style={inp} type="month" value={startMonth} onChange={e => setStartMonth(e.target.value)} /></div>
+            <div style={field}><label style={lbl}>종료월</label><input style={inp} type="month" value={endMonth} onChange={e => setEndMonth(e.target.value)} /></div>
+            <div style={field}>
+              <label style={lbl}>담당자</label>
+              <select style={{...inp}} value={createdBy} onChange={e => setCreatedBy(e.target.value)}>
+                <option value="">선택</option>
+                {(owners||[]).map(o => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+            <div style={field}>
+              <label style={lbl}>상태</label>
+              <div style={{ display:'flex', gap:6 }}>
+                {STATUS_OPTS.map(([val, label, color]) => (
+                  <button key={val}
+                    style={{ fontSize:11, padding:'4px 12px', borderRadius:5, border:`1px solid ${status===val ? color : inactiveBdr}`, background: status===val ? color+'18' : 'transparent', color: status===val ? color : '#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
+                    onClick={() => setStatus(val)}>{label}</button>
+                ))}
+              </div>
             </div>
           </div>
 
-          {/* Row 4: 착수월 / 종료월 / 예상계약월 */}
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:12, marginBottom:14 }}>
-            <div style={field}><label style={lbl}>착수월</label><input style={inp} value={startMonth} onChange={e => setStartMonth(e.target.value)} placeholder="2025-03" /></div>
-            <div style={field}><label style={lbl}>종료월</label><input style={inp} value={endMonth} onChange={e => setEndMonth(e.target.value)} placeholder="2026-02" /></div>
-            <div style={field}><label style={lbl}>예상 계약월</label><input style={inp} value={contractMonth} onChange={e => setContractMonth(e.target.value)} placeholder="2025-06" /></div>
-          </div>
-
-          {/* Row 5: 코멘트 */}
+          {/* Row 4: 코멘트 */}
           <div style={{ marginBottom:16 }}>
             <label style={lbl}>코멘트</label>
             <textarea style={{...inp, minHeight:56, resize:'vertical'}} value={comment} onChange={e => setComment(e.target.value)} />
