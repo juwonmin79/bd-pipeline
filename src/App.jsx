@@ -1329,7 +1329,7 @@ function AddProjectModal({ quarters, owners, productCats, session, darkMode, onC
   const [customer, setCustomer]         = useState('')
   const [productCat, setProductCat]     = useState('')
   const [country, setCountry]           = useState('')
-  const [quarter, setQuarter]           = useState('')
+  const [quarter, setQuarter]           = useState(quarters[0] || '')
   const [status, setStatus]             = useState('active')
   const [amt, setAmt]                   = useState(0)
   const [conf, setConf]                 = useState(0)
@@ -1348,6 +1348,7 @@ function AddProjectModal({ quarters, owners, productCats, session, darkMode, onC
 
   const handleSave = async () => {
     if (!caseName.trim()) { setError('Case명을 입력해주세요'); return }
+    if (!quarter) { setError('분기를 선택해주세요'); return } 
     setSaving(true); setError(null)
     const { error } = await supabase.from('projects').insert({
       case_name: caseName,
