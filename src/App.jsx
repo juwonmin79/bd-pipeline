@@ -9,6 +9,49 @@ const FALLBACK_RATES = { KRW: 1, USD: 1/1510, CNY: 1/217, JPY: 1/9.47, EUR: 1/17
 const CCY_SYMS = { KRW: '', USD: '$', CNY: '¥', JPY: '¥', EUR: '€' }
 const CCY_LABELS = { KRW: '원화', USD: 'USD', CNY: 'CNY', JPY: 'JPY', EUR: 'EUR' }
 
+// CUSTOMER_ALIASES
+const CUSTOMER_ALIASES = {
+  'lgu+':    ['lgu', 'lg유플러스', '엘지유플러스', 'lgup', 'lguplus', '유플러스'],
+  'kgm':     ['kgmotors', 'kg모빌리티', '케이지모빌리티', '쌍용', 'ssangyong', 'kgmobility'],
+  'lge':     ['lg전자', 'lgelectronics', '엘지전자', 'lg이노텍'],
+  '타타대우':  ['tata', '타타', '대우상용차', 'tatadaewoo', 'daewoo'],
+  '효림xe':   ['효림', 'hyorim', 'hyorimxe', 'xe'],
+  'hl만도':   ['만도', 'mando', 'hl', 'hlmando', '에이치엘만도'],
+  '티맵':     ['tmap', 'tmobility', '티맵모빌리티', 'tmapmobility'],
+  'mobis':   ['현대모비스', 'hyundaimobis', '모비스', 'hyundaimobis'],
+  'hmgc':    ['현대차그룹', 'hyundaimotorgroup', '현대그룹', 'hmg'],
+  'tmobi':   ['티모비', 'tmobi', '티모바일'],
+  'como':    ['코모', 'comovehicle', '코모비히클'],
+  '팅크웨어':  ['thinkware', '씽크웨어', 'inad', '아이나비', 'inavi'],
+  'kgict':   ['kg아이씨티', 'kg정보통신', 'kginformation'],
+  'hkmc':    ['현대기아차', '현대기아자동차', 'hyundaikia', '현대차', '현대자동차',
+               'hyundai', 'kia', '기아', '기아차', 'hkmotor'],
+  '삼성화재':  ['samsung화재', 'samsungfire', '삼성화재보험'],
+  '현대로템':  ['rotem', '로템', 'hyundairotem'],
+  '42dot':   ['포티투닷', '포티투', '포티', '42', '42닷', 'fortytwo',
+               'forty', 'fortytwo', '42dot', 'fourtytwo'],
+  'rkm':     ['르노코리아', 'renaultkorea', '르노삼성', 'renault', '르노', 'renaul'],
+  '오토에버':  ['autoever', 'hyundaiautoever', '현대오토에버', 'autoever'],
+  'volvo':   ['볼보', 'volvocar', 'volvotruck', '볼보트럭', '볼보카'],
+  'bmw':     ['비엠더블유', 'bmwkorea', '비엠', 'bmwgroup'],
+  'benz':    ['mercedes', '벤츠', '메르세데스', 'mercedesbenz', 'mb',
+               '메르세데스벤츠', 'mbkorea'],
+}
+
+// 검색 함수
+const normalize = (str) =>
+  (str || '').toLowerCase().replace(/[\s\+\-\_\.]/g, '')
+
+const expandSearch = (query) => {
+  const q = normalize(query)
+  for (const [key, aliases] of Object.entries(CUSTOMER_ALIASES)) {
+    if (normalize(key).includes(q) || aliases.some(a => normalize(a).includes(q))) {
+      return [key, ...aliases]
+    }
+  }
+  return [q]
+}
+
 // ── 유저 alias 헬퍼 ──────────────────────────────────
 const getAlias = (session) =>
   session?.user?.user_metadata?.alias ||
@@ -113,7 +156,10 @@ export default function App() {
     if (statusFilter !== 'all' && d.status !== statusFilter) return false
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase()
-      if (!(d.case_name||'').toLowerCase().includes(q) && !(d.customer||'').toLowerCase().includes(q)) return false
+      //if (!(d.case_name||'').toLowerCase().includes(q) && !(d.customer||'').toLowerCase().includes(q)) return false
+      const terms = expandSearch(searchQuery)
+      const match = (s) => terms.some(t => normalize(s).includes(t))
+      if (!match(d.case_name) && !match(d.customer)) return false
     }
     return true
   })
