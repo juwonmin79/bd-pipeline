@@ -52,6 +52,7 @@ export default function App() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [addProjectOpen, setAddProjectOpen] = useState(false)
+  const [owners, setOwners] = useState([])
   const [darkMode, setDarkMode] = useState(
     () => window.matchMedia('(prefers-color-scheme: dark)').matches
   )
@@ -78,6 +79,13 @@ export default function App() {
   }, [])
 
   useEffect(() => { loadDeals() }, [loadDeals])
+
+  // ── owners 로드 (users 테이블) ───────────────────
+  useEffect(() => {
+    supabase.from('users').select('alias').then(({ data }) => {
+      if (data) setOwners(data.map(u => u.alias).filter(Boolean))
+    })
+  }, [])
 
   // ── 환율 로드 ────────────────────────────────────
   useEffect(() => {
@@ -147,9 +155,6 @@ export default function App() {
   // 시뮬 KPI
   const hasSimChanges = Object.keys(simChanges).length > 0
   const simForecast = hasSimChanges ? activeForecast : null
-
-  // 담당자 목록
-  const owners = [...new Set(deals.map(d => d.created_by).filter(Boolean))]
 
   // 제품 구분 목록 (DB 실제값 기반)
   const productCats = [...new Set(deals.map(d => d.product_cat).filter(Boolean))].sort()
@@ -829,7 +834,7 @@ function ChildRow({ child, deal, fmtK, onEdit, onDelete }) {
       {/* 분기 */}
       <td style={{..._styles.td, textAlign:'center'}}><span style={{..._styles.quarterChip, color:'#a78bfa'}}>{child.quarter}</span></td>
       {/* 상태 */}
-      <td style={{..._styles.td, textAlign:'center'}}><span style={{..._styles.badge, background:'#1e1a35', color:'#a78bfa', fontSize:10}}>child</span></td>
+      <td style={{..._styles.td, textAlign:'center'}}><span style={{..._styles.badge, background:'rgba(167,139,250,0.15)', color:'#7c3aed', fontSize:10}}>child</span></td>
       {/* 확도 */}
       <td style={{..._styles.td, textAlign:'center'}}><span style={{ fontSize:11, color:'#9ca3af' }}>{child.conf}%</span></td>
       {/* 계약금액 */}
@@ -1178,12 +1183,19 @@ function LoginScreen({ darkMode, setDarkMode }) {
   const handleSignup = async () => {
     if (!alias.trim()) { setError('얼라이어스를 입력해주세요'); return }
     setLoading(true); setError(null); setSuccess(null)
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email, password,
       options: { data: { alias: alias.trim() } }
     })
-    if (error) { setError(error.message) }
-    else { setSuccess('가입 완료! 이메일 인증 후 로그인해주세요.') }
+    if (error) { setError(error.message); setLoading(false); return }
+    if (data?.user?.id) {
+      await supabase.from('users').insert({
+        id: data.user.id,
+        alias: alias.trim(),
+        email: email,
+      })
+    }
+    setSuccess('가입 완료! 로그인해주세요.')
     setLoading(false)
   }
 
