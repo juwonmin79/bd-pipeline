@@ -186,7 +186,7 @@ export default function App() {
       <div style={{ width:8, height:8, borderRadius:'50%', background:'#7c3aed' }} />
     </div>
   )
-  if (session === null) return <LoginScreen />
+  if (session === null) return <LoginScreen darkMode={darkMode} setDarkMode={setDarkMode} />
 
   if (loading) return (
     <div style={styles.loadWrap}>
@@ -206,8 +206,18 @@ export default function App() {
       {/* NAV */}
       <nav style={styles.nav}>
         {/* 좌: 로고만 */}
-        <div style={styles.logo}>BD <span style={styles.logoAccent}>SalesGear</span> <span style={{ fontSize:13 }}>⚙️</span></div>
-
+        
+        <div style={styles.logo}>
+          <div style={{
+            width:22, height:22, borderRadius:6,
+            background:'linear-gradient(135deg,#175BFF,#8A2BFF)',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            flexShrink:0,
+          }}>
+            <span style={{ fontSize:10, fontWeight:700, color:'white', letterSpacing:'-0.5px' }}>BD</span>
+          </div>
+          <span>Sales<span style={styles.logoAccent}>Gear</span></span>
+        </div>
         {/* 우: 모드탭 + 다크 + 로그아웃 + 유저 */}
         <div style={styles.navRight}>
           {/* 모드 탭 */}
@@ -466,6 +476,7 @@ export default function App() {
           quarters={quarters}
           owners={owners}
           session={session}
+          darkMode={darkMode}
           onClose={() => setAddProjectOpen(false)}
           onSaved={() => { setAddProjectOpen(false); loadDeals() }}
         />
@@ -959,7 +970,8 @@ function getStyles(dark) {
     // nav
     nav: { display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 24px', height:52, background:bg1, borderBottom:'1px solid '+br },
     navLeft: { display:'flex', alignItems:'center', gap:20 },
-    logo: { fontSize:15, fontWeight:600, color:tx0, letterSpacing:'-0.02em' },
+    //logo: { fontSize:15, fontWeight:600, color:tx0, letterSpacing:'-0.02em' },
+    logo: { fontSize:15, fontWeight:600, color:tx0, letterSpacing:'-0.02em', display:'flex', alignItems:'center', gap:8 },
     logoAccent: { color:'#7c3aed' },
     modeTabs: { display:'flex', alignItems:'center', background:bg2, borderRadius:8, padding:'2px 3px', gap:2, height:30, boxSizing:'border-box' },
     modeTab: { fontSize:12, padding:'0 14px', height:'100%', borderRadius:6, border:'none', background:'transparent', color:tx1, cursor:'pointer', fontFamily:"'Geist', sans-serif", transition:'all .15s' },
@@ -1053,7 +1065,7 @@ function getStyles(dark) {
     childDelBtn: { fontSize:10, padding:'2px 7px', borderRadius:4, border:'1px solid #f87171', background:'transparent', color:'#f87171', cursor:'pointer', fontFamily:"'Geist', sans-serif" },
     childCard: { background: dark ? '#0a0a14' : '#f0eeff', border:'1px solid #2a1f5c', borderRadius:7, padding:'10px 12px', marginBottom:8 },
     childHeader: { display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 },
-    childBadge: { fontSize:10, padding:'1px 6px', borderRadius:4, background:'#1e1635', color:'#a78bfa', fontWeight:500 },
+    childBadge: { fontSize:10, padding:'1px 6px', borderRadius:4, background: dark ? '#1e1635' : '#ede9fe', color: dark ? '#a78bfa' : '#5b21b6', fontWeight:500 },
     childGrid: { display:'grid', gridTemplateColumns:'repeat(3, minmax(0,1fr))', gap:8 },
     btnRm: { fontSize:10, padding:'2px 7px', borderRadius:4, border:'1px solid '+br2, background:'transparent', color:tx1, cursor:'pointer', fontFamily:"'Geist', sans-serif" },
     splitCheck: { display:'flex', alignItems:'center', justifyContent:'space-between', background:bg1, border:'1px solid '+br, borderRadius:6, padding:'7px 12px', marginBottom:10, fontSize:12 },
@@ -1095,8 +1107,8 @@ function getStyles(dark) {
   }
 }
 
-// ── 로그인 화면 ───────────────────────────────────
-function LoginScreen() {
+// ── 로그인 화면 ── Sprint 1 ─────────────────────────
+function LoginScreen({ darkMode, setDarkMode }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -1108,53 +1120,90 @@ function LoginScreen() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) setError(error.message)
     setLoading(false)
-    // 성공 시 onAuthStateChange가 session 감지 → App이 자동으로 메인 화면 렌더
   }
+
+  const dk = darkMode
+  const bg        = dk ? '#0d0d0d' : '#f9fafb'
+  const cardBg    = dk ? '#111111' : '#ffffff'
+  const cardBdr   = dk ? '#1f1f1f' : '#e5e7eb'
+  const logoClr   = dk ? '#f0f0f0' : '#111827'
+  const accent    = dk ? '#a78bfa' : '#7c3aed'
+  const subClr    = dk ? '#6b7280' : '#9ca3af'
+  const lblClr    = '#6b7280'
+  const inputBg   = dk ? '#1a1a1a' : '#f3f4f6'
+  const inputBdr  = dk ? '#2a2a2a' : '#e5e7eb'
+  const inputClr  = dk ? '#f0f0f0' : '#111827'
+  const toggleBdr = dk ? '#2a2a2a' : '#e5e7eb'
+  const toggleClr = dk ? '#9ca3af' : '#6b7280'
 
   return (
     <div style={{
-      minHeight:'100vh', background:'#0a0a0a',
+      minHeight:'100vh', background: bg,
       display:'flex', alignItems:'center', justifyContent:'center',
-      fontFamily:"'Geist', sans-serif"
+      fontFamily:"'Geist', sans-serif", transition:'background .25s',
     }}>
       <div style={{
-        background:'#111', border:'1px solid #1f1f1f', borderRadius:12,
-        padding:'36px 32px', width:340, display:'flex', flexDirection:'column', gap:16
+        background: cardBg, border:`1px solid ${cardBdr}`, borderRadius:14,
+        padding:'36px 32px', width:360,
+        display:'flex', flexDirection:'column', gap:16,
+        boxShadow: dk ? '0 20px 40px rgba(0,0,0,0.5)' : '0 8px 24px rgba(0,0,0,0.08)',
+        transition:'all .25s',
       }}>
-        {/* 로고 */}
-        <div style={{ fontSize:18, fontWeight:600, color:'#f0f0f0', marginBottom:4 }}>
-          BD <span style={{ color:'#7c3aed' }}>Pipeline</span>
+        {/* 다크/라이트 토글 */}
+        <div style={{ display:'flex', justifyContent:'flex-end' }}>
+          <button onClick={() => setDarkMode(d => !d)} style={{
+            fontSize:11, padding:'3px 10px', borderRadius:5,
+            border:`1px solid ${toggleBdr}`, background:'transparent',
+            color: toggleClr, cursor:'pointer', fontFamily:"'Geist', sans-serif",
+          }}>
+            {dk ? '☀️ 라이트' : '🌙 다크'}
+          </button>
         </div>
-        <div style={{ fontSize:12, color:'#6b7280', marginBottom:8 }}>로그인하여 계속하세요</div>
 
+        {/* 로고 */}
+        <div style={{ fontSize:20, fontWeight:600, color: logoClr, marginBottom:6, display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{
+            width:26, height:26, borderRadius:7,
+            background:'linear-gradient(135deg,#175BFF,#8A2BFF)',
+            display:'flex', alignItems:'center', justifyContent:'center',
+            flexShrink:0,
+          }}>
+            <span style={{ fontSize:11, fontWeight:700, color:'white', letterSpacing:'-0.5px' }}>BD</span>
+          </div>
+          Sales<span style={{ color: accent }}>Gear</span>
+        </div>
+
+        {/* 이미지 슬롯 — 원하는 이미지 src로 교체하세요 */}
+        <img src="/logo.svg" alt="" style={{ width: 180, height: 180, display: 'block', margin: '0 auto 8px' }}/>
+        
         {/* 이메일 */}
         <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-          <label style={{ fontSize:11, color:'#6b7280' }}>이메일</label>
+          <label style={{ fontSize:11, color: lblClr }}>이메일</label>
           <input
             type="email" value={email}
             onChange={e => setEmail(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleLogin()}
             placeholder="name@company.com"
             style={{
-              fontSize:13, padding:'9px 11px', borderRadius:7,
-              border:'1px solid #2a2a2a', background:'#1a1a1a',
-              color:'#f0f0f0', outline:'none'
+              fontSize:13, padding:'9px 11px', borderRadius:8,
+              border:`1px solid ${inputBdr}`, background: inputBg,
+              color: inputClr, outline:'none', fontFamily:"'Geist', sans-serif",
             }}
           />
         </div>
 
         {/* 비밀번호 */}
         <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-          <label style={{ fontSize:11, color:'#6b7280' }}>비밀번호</label>
+          <label style={{ fontSize:11, color: lblClr }}>비밀번호</label>
           <input
             type="password" value={password}
             onChange={e => setPassword(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleLogin()}
             placeholder="••••••••"
             style={{
-              fontSize:13, padding:'9px 11px', borderRadius:7,
-              border:'1px solid #2a2a2a', background:'#1a1a1a',
-              color:'#f0f0f0', outline:'none'
+              fontSize:13, padding:'9px 11px', borderRadius:8,
+              border:`1px solid ${inputBdr}`, background: inputBg,
+              color: inputClr, outline:'none', fontFamily:"'Geist', sans-serif",
             }}
           />
         </div>
@@ -1166,10 +1215,11 @@ function LoginScreen() {
         <button
           onClick={handleLogin} disabled={loading}
           style={{
-            fontSize:13, padding:'10px', borderRadius:7, border:'none',
+            fontSize:13, padding:'10px', borderRadius:8, border:'none',
             background: loading ? '#4c1d95' : '#7c3aed',
-            color:'#f0f0f0', cursor: loading ? 'not-allowed' : 'pointer',
-            fontWeight:500, marginTop:4
+            color:'#ffffff', cursor: loading ? 'not-allowed' : 'pointer',
+            fontWeight:500, marginTop:4, fontFamily:"'Geist', sans-serif",
+            transition:'background .15s',
           }}
         >
           {loading ? '로그인 중...' : '로그인'}
@@ -1179,8 +1229,8 @@ function LoginScreen() {
   )
 }
 
-// ── 프로젝트 추가 모달 ────────────────────────────
-function AddProjectModal({ quarters, owners, session, onClose, onSaved }) {
+// ── 프로젝트 추가 모달 ── Sprint 2 ───────────────────
+function AddProjectModal({ quarters, owners, session, darkMode, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
@@ -1230,23 +1280,37 @@ function AddProjectModal({ quarters, owners, session, onClose, onSaved }) {
     onSaved()
   }
 
+  const dk = darkMode
+  const modalBg   = dk ? '#111'     : '#ffffff'
+  const modalBdr  = dk ? '#2a1f5c'  : '#e5e7eb'
+  const headerBg  = dk ? '#1e1635'  : '#f5f3ff'
+  const headerBdr = dk ? '#2a1f5c'  : '#e5e7eb'
+  const titleClr  = dk ? '#c4b5fd'  : '#5b21b6'
+  const footerBg  = dk ? '#0d0d0d'  : '#f9fafb'
+  const footerBdr = dk ? '#1f1f1f'  : '#e5e7eb'
+  const cancelBdr = dk ? '#2a2a2a'  : '#e5e7eb'
+  const cancelClr = dk ? '#6b7280'  : '#6b7280'
+  const inactiveBdr = dk ? '#2a2a2a': '#e5e7eb'
+
   const inp = {
     fontSize:12, padding:'7px 9px', borderRadius:6,
-    border:'1px solid #2a2a2a', background:'#1a1a1a',
-    color:'#f0f0f0', fontFamily:"'Geist', sans-serif", outline:'none', width:'100%', boxSizing:'border-box'
+    border:`1px solid ${dk ? '#2a2a2a' : '#e5e7eb'}`,
+    background: dk ? '#1a1a1a' : '#f9fafb',
+    color: dk ? '#f0f0f0' : '#111827',
+    fontFamily:"'Geist', sans-serif", outline:'none', width:'100%', boxSizing:'border-box'
   }
-  const lbl = { fontSize:11, color:'#6b7280', marginBottom:4, display:'block' }
+  const lbl   = { fontSize:11, color:'#6b7280', marginBottom:4, display:'block' }
   const field = { display:'flex', flexDirection:'column', gap:3 }
   const grid4 = { display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:12, marginBottom:14 }
   const grid2 = { display:'grid', gridTemplateColumns:'repeat(2,minmax(0,1fr))', gap:12, marginBottom:14 }
 
   return (
     <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 }}>
-      <div style={{ background:'#111', border:'1px solid #2a1f5c', borderRadius:12, width:'100%', maxWidth:640, overflow:'hidden', fontFamily:"'Geist', sans-serif" }}>
+      <div style={{ background: modalBg, border:`1px solid ${modalBdr}`, borderRadius:12, width:'100%', maxWidth:640, overflow:'hidden', fontFamily:"'Geist', sans-serif" }}>
 
         {/* 헤더 */}
-        <div style={{ background:'#1e1635', padding:'13px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:'1px solid #2a1f5c' }}>
-          <span style={{ fontSize:13, fontWeight:500, color:'#c4b5fd' }}>+ 프로젝트 추가</span>
+        <div style={{ background: headerBg, padding:'13px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:`1px solid ${headerBdr}` }}>
+          <span style={{ fontSize:13, fontWeight:500, color: titleClr }}>+ 프로젝트 추가</span>
           <button onClick={onClose} style={{ fontSize:20, color:'#7c3aed', cursor:'pointer', background:'none', border:'none', lineHeight:1 }}>×</button>
         </div>
 
@@ -1279,7 +1343,7 @@ function AddProjectModal({ quarters, owners, session, onClose, onSaved }) {
             <div style={{ display:'flex', gap:6 }}>
               {STATUS_OPTS.map(([val, label, color]) => (
                 <button key={val}
-                  style={{ fontSize:11, padding:'4px 12px', borderRadius:5, border:`1px solid ${status===val ? color : '#2a2a2a'}`, background: status===val ? color+'18' : 'transparent', color: status===val ? color : '#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
+                  style={{ fontSize:11, padding:'4px 12px', borderRadius:5, border:`1px solid ${status===val ? color : inactiveBdr}`, background: status===val ? color+'18' : 'transparent', color: status===val ? color : '#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
                   onClick={() => setStatus(val)}>{label}</button>
               ))}
             </div>
@@ -1302,8 +1366,8 @@ function AddProjectModal({ quarters, owners, session, onClose, onSaved }) {
         </div>
 
         {/* 푸터 */}
-        <div style={{ padding:'12px 20px', background:'#0d0d0d', display:'flex', justifyContent:'flex-end', gap:8, borderTop:'1px solid #1f1f1f' }}>
-          <button onClick={onClose} style={{ fontSize:12, padding:'6px 14px', borderRadius:6, border:'1px solid #2a2a2a', background:'transparent', color:'#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}>취소</button>
+        <div style={{ padding:'12px 20px', background: footerBg, display:'flex', justifyContent:'flex-end', gap:8, borderTop:`1px solid ${footerBdr}` }}>
+          <button onClick={onClose} style={{ fontSize:12, padding:'6px 14px', borderRadius:6, border:`1px solid ${cancelBdr}`, background:'transparent', color: cancelClr, cursor:'pointer', fontFamily:"'Geist', sans-serif" }}>취소</button>
           <button onClick={handleSave} disabled={saving}
             style={{ fontSize:12, padding:'6px 16px', borderRadius:6, border:'none', background: saving ? '#4c1d95' : '#7c3aed', color:'#f0f0f0', cursor: saving ? 'not-allowed':'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif" }}>
             {saving ? '저장 중...' : '저장'}

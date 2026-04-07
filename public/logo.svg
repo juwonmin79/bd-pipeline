@@ -1,0 +1,50 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g1" x1="80" y1="80" x2="430" y2="430" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#35C6FF"/>
+      <stop offset="50%" stop-color="#175BFF"/>
+      <stop offset="100%" stop-color="#8A2BFF"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 배경 글로우 고정 -->
+  <circle cx="256" cy="256" r="160" stroke="url(#g1)" stroke-width="50" opacity="0.06"/>
+
+  <!-- 외부 링 — 시계방향 24s -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+      from="0 256 256" to="360 256 256" dur="24s" repeatCount="indefinite"/>
+    <circle cx="256" cy="256" r="160"
+      stroke="url(#g1)" stroke-width="10" opacity="0.60"
+      fill="none" stroke-linecap="round"
+      stroke-dasharray="12 38"/>
+  </g>
+
+  <!-- 중간 링 — 반시계방향 16s -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+      from="0 256 256" to="-360 256 256" dur="16s" repeatCount="indefinite"/>
+    <circle cx="256" cy="256" r="120"
+      stroke="url(#g1)" stroke-width="10" opacity="0.75"
+      fill="none" stroke-linecap="round"
+      stroke-dasharray="14 34"/>
+    <circle cx="256" cy="256" r="130"
+      stroke="url(#g1)" stroke-width="1.5" opacity="0.18"
+      fill="none" stroke-linecap="round"
+      stroke-dasharray="4 16"/>
+  </g>
+
+  <!-- 내부 링 — 시계방향 10s -->
+  <g>
+    <animateTransform attributeName="transform" type="rotate"
+      from="0 256 256" to="360 256 256" dur="10s" repeatCount="indefinite"/>
+    <circle cx="256" cy="256" r="80"
+      stroke="url(#g1)" stroke-width="9" opacity="0.80"
+      fill="none" stroke-linecap="round"
+      stroke-dasharray="10 22"/>
+  </g>
+
+  <!-- 중앙 고정 -->
+  <circle cx="256" cy="256" r="48" stroke="url(#g1)" stroke-width="1.5" opacity="0.30" fill="none"/>
+  <circle cx="256" cy="256" r="8" fill="url(#g1)" opacity="0.8"/>
+</svg>
