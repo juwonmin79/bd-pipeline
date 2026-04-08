@@ -1,6 +1,34 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from './supabase'
 
+// ── PIN 암호화/복호화 헬퍼 ────────────────────────
+async function deriveKey(pin) {
+  return crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(pin.padEnd(32, '0')),
+    { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
+  )
+}
+async function encryptPw(pin, password) {
+  const key = await deriveKey(pin)
+  const iv = crypto.getRandomValues(new Uint8Array(12))
+  const enc = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(password))
+  const combined = new Uint8Array(iv.length + enc.byteLength)
+  combined.set(iv); combined.set(new Uint8Array(enc), iv.length)
+  return btoa(String.fromCharCode(...combined))
+}
+async function decryptPw(pin, encrypted) {
+  try {
+    const combined = Uint8Array.from(atob(encrypted), c => c.charCodeAt(0))
+    const key = await deriveKey(pin)
+    const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: combined.slice(0,12) }, key, combined.slice(12))
+    return new TextDecoder().decode(dec)
+  } catch { return null }
+}
+async function hashPin(pin) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin))
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('')
+}
+
 // ── 모듈 레벨 styles 참조 (하위 컴포넌트용) ──────
 let _styles = null
 
@@ -95,6 +123,15 @@ export default function App() {
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
   const [addProjectOpen, setAddProjectOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [changePwOpen, setChangePwOpen] = useState(false)
+  const [changePinOpen, setChangePinOpen] = useState(false)
+  const [toast, setToast] = useState(null)
+
+  const showToast = (msg, type='success') => {
+  setToast({ msg, type })
+  setTimeout(() => setToast(null), 2500)
+  }
   const [owners, setOwners] = useState([])
   const [darkMode, setDarkMode] = useState(
     () => window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -107,6 +144,16 @@ export default function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => setSession(s ?? null))
     return () => subscription.unsubscribe()
   }, [])
+
+  // ── PIN 설정 모달 ────────────────────────────────
+  const [needPinSetup, setNeedPinSetup] = useState(false)
+  const [pinSetupPassword, setPinSetupPassword] = useState('')
+
+  useEffect(() => {
+    if (!pinSetupPassword || !session) return
+    const savedEnc = localStorage.getItem('bd_enc')
+    if (!savedEnc) setNeedPinSetup(true)
+  }, [pinSetupPassword, session])
 
   // ── 데이터 로드 ──────────────────────────────────
   const loadDeals = useCallback(async () => {
@@ -121,7 +168,10 @@ export default function App() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { loadDeals() }, [loadDeals])
+//  useEffect(() => { loadDeals() }, [loadDeals])
+    useEffect(() => {
+      if (session !== undefined) loadDeals()
+    }, [session, loadDeals])
 
   // ── 환율 로드 ────────────────────────────────────
   useEffect(() => {
@@ -249,7 +299,13 @@ export default function App() {
       <div style={{ width:8, height:8, borderRadius:'50%', background:'#7c3aed' }} />
     </div>
   )
-  if (session === null) return <LoginScreen darkMode={darkMode} setDarkMode={setDarkMode} />
+  if (session === null) return (
+    <LoginScreen
+      darkMode={darkMode}
+      setDarkMode={setDarkMode}
+      onLoginSuccess={(pw) => setPinSetupPassword(pw)}
+    />
+  )
 
   if (loading) return (
     <div style={styles.loadWrap}>
@@ -269,7 +325,6 @@ export default function App() {
       {/* NAV */}
       <nav style={styles.nav}>
         {/* 좌: 로고만 */}
-        
         <div style={styles.logo}>
           <div style={{
             width:22, height:22, borderRadius:6,
@@ -281,27 +336,59 @@ export default function App() {
           </div>
           <span>Sales<span style={styles.logoAccent}>Gear</span></span>
         </div>
-        {/* 우: 모드탭 + 다크 + 로그아웃 + 유저 */}
+        {/* 우: 유저 + 로그아웃 + 다크 */}
         <div style={styles.navRight}>
-          {/* 모드 탭 */}
-          <div style={styles.modeTabs}>
-            {[['personal','개인 뷰'],['admin','전체 뷰'],['sim','시뮬레이션']].map(([m, label]) => (
-              <button key={m}
-                style={{...styles.modeTab, ...(mode===m ? (m==='sim' ? styles.modeTabSimActive : styles.modeTabActive) : {})}}
-                onClick={() => setMode(m)}>{label}</button>
-            ))}
+
+        {/* 유저 */}
+        <div style={{ position:'relative' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}
+            onClick={() => setProfileOpen(o => !o)}>
+            <div style={styles.avatar}>{getAlias(session)[0]?.toUpperCase()}</div>
+            <span style={styles.userName}>{getAlias(session)}</span>
+            <span style={{ fontSize:10, color: darkMode ? '#6b7280' : '#9ca3af' }}>▾</span>
           </div>
 
-          {/* 다크 토글 */}
-          <button onClick={() => setDarkMode(d => !d)} style={{
-            fontSize:12, padding:'0 10px', height:30, borderRadius:6,
-            border:'1px solid ' + (darkMode ? '#2a2a2a' : '#d1d5db'),
-            background:'transparent',
-            color: darkMode ? '#fbbf24' : '#6b7280',
-            cursor:'pointer', fontFamily:"'Geist', sans-serif",
-            whiteSpace:'nowrap', boxSizing:'border-box'
-          }}>{darkMode ? '☀️ 라이트' : '🌙 다크'}</button>
-
+          {/* 드롭다운 */}
+          {profileOpen && (
+            <>
+              {/* 바깥 클릭 시 닫기 */}
+              <div style={{ position:'fixed', inset:0, zIndex:99 }} onClick={() => setProfileOpen(false)} />
+              <div style={{
+                position:'absolute', top:'calc(100% + 8px)', right:0, zIndex:100,
+                background: darkMode ? '#111' : '#fff',
+                border:'1px solid ' + (darkMode ? '#2a2a2a' : '#e5e7eb'),
+                borderRadius:10, minWidth:200, overflow:'hidden',
+                boxShadow: darkMode ? '0 8px 24px rgba(0,0,0,0.5)' : '0 8px 24px rgba(0,0,0,0.1)',
+                fontFamily:"'Geist', sans-serif",
+              }}>
+                {/* 유저 정보 */}
+                <div style={{ padding:'12px 14px', borderBottom:'1px solid ' + (darkMode ? '#1f1f1f' : '#f0f0f0') }}>
+                  <div style={{ fontSize:13, fontWeight:500, color: darkMode ? '#f0f0f0' : '#111827' }}>{getAlias(session)}</div>
+                  <div style={{ fontSize:11, color:'#6b7280', marginTop:2 }}>{session?.user?.email}</div>
+                </div>
+                {/* 비밀번호 변경 */}
+                <button onClick={() => { setProfileOpen(false); setChangePwOpen(true) }} style={{
+                  width:'100%', padding:'10px 14px', border:'none', background:'transparent',
+                  textAlign:'left', fontSize:12, color: darkMode ? '#d1d5db' : '#374151',
+                  cursor:'pointer', fontFamily:"'Geist', sans-serif",
+                  borderBottom:'1px solid ' + (darkMode ? '#1f1f1f' : '#f0f0f0'),
+                }}
+                  onMouseEnter={e => e.currentTarget.style.background = darkMode ? '#1a1a1a' : '#f9fafb'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >🔑 비밀번호 변경</button>
+                {/* PIN 변경/설정 */}
+                <button onClick={() => { setProfileOpen(false); setChangePinOpen(true) }} style={{
+                  width:'100%', padding:'10px 14px', border:'none', background:'transparent',
+                  textAlign:'left', fontSize:12, color: darkMode ? '#d1d5db' : '#374151',
+                  cursor:'pointer', fontFamily:"'Geist', sans-serif",
+                }}
+                  onMouseEnter={e => e.currentTarget.style.background = darkMode ? '#1a1a1a' : '#f9fafb'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >{localStorage.getItem('bd_enc') ? '🔐 PIN 변경' : '🔐 PIN 설정'}</button>
+              </div>
+            </>
+          )}
+        </div>
           {/* 로그아웃 */}
           <button onClick={() => supabase.auth.signOut()} style={{
             fontSize:12, padding:'0 10px', height:30, borderRadius:6,
@@ -311,12 +398,15 @@ export default function App() {
             cursor:'pointer', fontFamily:"'Geist', sans-serif",
             whiteSpace:'nowrap', boxSizing:'border-box'
           }}>로그아웃</button>
-
-          {/* 유저 */}
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <div style={styles.avatar}>J</div>
-            <span style={styles.userName}>{getAlias(session)}</span>
-          </div>
+          {/* 다크 토글 */}
+          <button onClick={() => setDarkMode(d => !d)} style={{
+            fontSize:12, padding:'0 10px', height:30, borderRadius:6,
+            border:'1px solid transparent',
+            background:'transparent',
+            color: darkMode ? '#f5e9cc' : '#e0e3e9',
+            cursor:'pointer', fontFamily:"'Geist', sans-serif",
+            whiteSpace:'nowrap', boxSizing:'border-box'
+          }}>{darkMode ? '☀️ 라이트' : '🌙 다크'}</button>
         </div>
       </nav>
 
@@ -379,7 +469,14 @@ export default function App() {
           <option value="pending">대기</option>
           <option value="drop">드랍</option>
         </select>
-
+        {/* 모드 탭 */}
+        <div style={{...styles.modeTabs, marginLeft: 'auto'}}>
+          {[['personal','개인 뷰'],['admin','전체 뷰'],['sim','시뮬레이션']].map(([m, label]) => (
+            <button key={m}
+              style={{...styles.modeTab, ...(mode===m ? (m==='sim' ? styles.modeTabSimActive : styles.modeTabActive) : {})}}
+              onClick={() => setMode(m)}>{label}</button>
+          ))}
+        </div>
         {/* 추가 버튼 */}
         <button style={styles.btnAddProject} onClick={() => setAddProjectOpen(true)}>
           + 프로젝트 추가
@@ -556,6 +653,48 @@ export default function App() {
           onClose={() => setAddProjectOpen(false)}
           onSaved={() => { setAddProjectOpen(false); loadDeals() }}
         />
+      )}
+
+      {/* PIN 설정 모달 — 최초 1회 */}
+      {needPinSetup && (
+        <PinSetupModal
+          darkMode={darkMode}
+          session={session}
+          password={pinSetupPassword} 
+          onDone={() => { setNeedPinSetup(false); setPinSetupPassword('') }}
+        />
+      )}
+
+      {/* 비밀번호 변경 모달 ← 여기 교체 */}
+      {changePwOpen && (
+        <ChangePwModal
+          darkMode={darkMode}
+          session={session}
+          onClose={() => setChangePwOpen(false)}
+          onSuccess={(msg) => { setChangePwOpen(false); showToast(msg) }}
+        />
+      )}
+
+      {/* PIN 변경/설정 모달 */}
+      {changePinOpen && (
+        <PinSetupModal
+          darkMode={darkMode}
+          session={session}
+          onDone={() => { setChangePinOpen(false); showToast('PIN이 변경됐어요 ✓') }}
+        />
+      )}
+
+      {/* 토스트 */}
+      {toast && (
+        <div style={{
+          position:'fixed', bottom:24, right:24, zIndex:9999,
+          background: darkMode ? '#1e1635' : '#ede9fe',
+          border: '1px solid #7c3aed',
+          color: darkMode ? '#c4b5fd' : '#5b21b6',
+          padding:'10px 18px', borderRadius:8, fontSize:13, fontWeight:500,
+          fontFamily:"'Geist', sans-serif",
+          boxShadow:'0 4px 16px rgba(124,58,237,0.3)',
+        }}>{toast.msg}</div>
       )}
     </div>
   )
@@ -1063,12 +1202,14 @@ function getStyles(dark) {
     navRight: { display:'flex', alignItems:'center', gap:10 },
 
     // ccy
-    ccyWrap: { display:'flex', alignItems:'center', gap:6, background:bg2, border:'1px solid '+br2, borderRadius:8, padding:'4px 10px' },
+    //ccyWrap: { display:'flex', alignItems:'center', gap:6, background:bg2, border:'1px solid '+br2, borderRadius:8, padding:'4px 10px' },
+    ccyWrap: { display:'flex', alignItems:'center', gap:6, height:30, boxSizing:'border-box', background:bg2, border:'1px solid '+br2, borderRadius:8, padding:'0 10px' },
     ccyLabel: { fontSize:11, color:tx1 },
     ccySel: { fontSize:12, fontWeight:500, color:tx0, border:'none', background:'transparent', cursor:'pointer', fontFamily:"'Geist', sans-serif" },
     rateDot: { width:6, height:6, borderRadius:'50%' },
     rateLabel: { fontSize:10, color:tx1 },
-    avatar: { width:28, height:28, borderRadius:'50%', background:'#1e1635', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:500, color:'#a78bfa' },
+    //avatar: { width:28, height:28, borderRadius:'50%', background:'#1e1635', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:500, color:'#a78bfa' },
+    avatar: { width:28, height:28, borderRadius:'50%', background: dark ? '#1e1635' : '#ede9fe', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:500, color: dark ? '#a78bfa' : '#5b21b6' },
     userName: { fontSize:12, color:tx1 },
 
     // sim banner
@@ -1084,9 +1225,15 @@ function getStyles(dark) {
     // toolbar — 단일 flex 줄
     toolbar: { display:'flex', alignItems:'center', padding:'8px 24px', background: dark ? '#0f0f0f' : '#fafafa', borderBottom:'1px solid '+br, gap:8, flexWrap:'wrap' },
     toolbarLeft: { display:'flex', alignItems:'center', gap:10 },
-    ownerSel: { fontSize:12, padding:'5px 10px', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif" },
-    searchInput: { fontSize:12, padding:'5px 10px', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif", outline:'none', width:148 },
-    btnAddProject: { fontSize:12, padding:'5px 14px', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif", whiteSpace:'nowrap', marginLeft:'auto' },
+    //ownerSel: { fontSize:12, padding:'5px 10px', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif" },
+    ownerSel: { fontSize:12, padding:'0 10px', height:30, boxSizing:'border-box', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif" },
+
+    //searchInput: { fontSize:12, padding:'5px 10px', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif", outline:'none', width:148 },
+    searchInput: { fontSize:12, padding:'0 10px', height:30, boxSizing:'border-box', borderRadius:6, border:'1px solid '+br2, background:bg2, color:tx0, fontFamily:"'Geist', sans-serif", outline:'none', width:148 },
+
+    //btnAddProject: { fontSize:12, padding:'5px 14px', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif", whiteSpace:'nowrap', marginLeft:'auto' },
+    btnAddProject: { fontSize:12, padding:'0 14px', height:30, boxSizing:'border-box', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif", whiteSpace:'nowrap' },
+
     modeLabel: { fontSize:11, color:tx1 },
 
     // body
@@ -1189,36 +1336,215 @@ function getStyles(dark) {
     btnCommit: { fontSize:12, padding:'7px 16px', borderRadius:6, border:'none', background:'#7c3aed', color:'#f0f0f0', cursor:'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif", whiteSpace:'nowrap' },
   }
 }
-
-// ── 로그인 화면 ── Sprint 1 ─────────────────────────
-function LoginScreen({ darkMode, setDarkMode }) {
-  const [tab, setTab] = useState('login')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [alias, setAlias] = useState('')
-  const [aliasManuallyEdited, setAliasManuallyEdited] = useState(false)
+function ChangePwModal({ darkMode, session, onClose, onSuccess }) {
+  const [newPw, setNewPw] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
-  const handleEmailChange = (v) => {
-    setEmail(v)
-    if (tab === 'signup' && !aliasManuallyEdited) {
-      setAlias(v.split('@')[0] || '')
-    }
-  }
-  const handleAliasChange = (v) => {
-    setAlias(v)
-    setAliasManuallyEdited(true)
+  const dk = darkMode
+  const modalBg  = dk ? '#111'    : '#ffffff'
+  const modalBdr = dk ? '#2a1f5c' : '#e5e7eb'
+  const headerBg = dk ? '#1e1635' : '#f5f3ff'
+  const lblClr   = '#6b7280'
+  const accent   = '#7c3aed'
+
+  const inputStyle = {
+    fontSize:13, padding:'9px 11px', borderRadius:8,
+    border:`1px solid ${dk ? '#2a2a2a' : '#e5e7eb'}`,
+    background: dk ? '#1a1a1a' : '#f3f4f6',
+    color: dk ? '#f0f0f0' : '#111827',
+    outline:'none', fontFamily:"'Geist', sans-serif",
+    width:'100%', boxSizing:'border-box',
   }
 
+  const handleSave = async () => {
+    if (newPw.length < 6) { setError('6자 이상 입력해주세요'); return }
+    if (newPw !== confirm) { setError('비밀번호가 일치하지 않아요'); return }
+    setLoading(true); setError(null)
+    const { error } = await supabase.auth.updateUser({ password: newPw })
+    if (error) { setError(error.message); setLoading(false); return }
+    await supabase.from('users').update({ pin_hash: null }).eq('id', session.user.id) 
+    // localStorage 암호화 비밀번호도 갱신
+
+    setLoading(false)
+    setTimeout(() => onClose(), 1000)  // 1.0초 후 자동 닫힘
+    onSuccess('비밀번호가 변경됐어요 ✓')
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000, padding:20 }}>
+      <div style={{ background: modalBg, border:`1px solid ${modalBdr}`, borderRadius:12, width:'100%', maxWidth:360, overflow:'hidden', fontFamily:"'Geist', sans-serif" }}>
+        <div style={{ background: headerBg, padding:'14px 20px', borderBottom:`1px solid ${modalBdr}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <div>
+            <div style={{ fontSize:13, fontWeight:500, color: dk ? '#c4b5fd' : '#5b21b6' }}>🔑 비밀번호 변경</div>
+            <div style={{ fontSize:11, color: lblClr, marginTop:3 }}>새 비밀번호를 입력해주세요</div>
+          </div>
+        </div>
+        <div style={{ padding:'20px', display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            <label style={{ fontSize:11, color: lblClr }}>새 비밀번호</label>
+            <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)}
+              placeholder="6자 이상" style={inputStyle} autoFocus />
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            <label style={{ fontSize:11, color: lblClr }}>비밀번호 확인</label>
+            <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSave()}
+              placeholder="동일하게 입력" style={inputStyle} />
+          </div>
+          {error && <div style={{ fontSize:12, color:'#f87171' }}>{error}</div>}
+          {success && <div style={{ fontSize:12, color:'#4ade80' }}>{success}</div>}
+        </div>
+        <div style={{ padding:'12px 20px', background: dk ? '#0d0d0d' : '#f9fafb', display:'flex', justifyContent:'flex-end', gap:8, borderTop:`1px solid ${modalBdr}` }}>
+          <button onClick={onClose} style={{ fontSize:12, padding:'6px 14px', borderRadius:6, border:`1px solid ${dk ? '#2a2a2a' : '#e5e7eb'}`, background:'transparent', color: lblClr, cursor:'pointer', fontFamily:"'Geist', sans-serif" }}>나중에</button>
+          <button onClick={handleSave} disabled={loading} style={{ fontSize:12, padding:'6px 16px', borderRadius:6, border:'none', background: loading ? '#4c1d95' : accent, color:'#f0f0f0', cursor: loading ? 'not-allowed':'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif" }}>
+            {loading ? '변경 중...' : '변경'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── PIN 설정 모달 (로그인/가입 후 최초 1회) ─────────
+function PinSetupModal({ darkMode, session, password, onDone }) {
+  const [pin, setPin] = useState('')
+  const [pinConfirm, setPinConfirm] = useState('')
+  const [currentPw, setCurrentPw] = useState('')  // ← 추가
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  const dk = darkMode
+  const modalBg  = dk ? '#111'    : '#ffffff'
+  const modalBdr = dk ? '#2a1f5c' : '#e5e7eb'
+  const headerBg = dk ? '#1e1635' : '#f5f3ff'
+  const lblClr   = '#6b7280'
+  const accent   = '#7c3aed'
+
+  const pinStyle = {
+    fontSize: 24, letterSpacing: 10, textAlign: 'center', fontWeight: 500,
+    padding: '9px 11px', borderRadius: 8,
+    border: `1px solid ${dk ? '#2a2a2a' : '#e5e7eb'}`,
+    background: dk ? '#1a1a1a' : '#f3f4f6',
+    color: dk ? '#f0f0f0' : '#111827',
+    outline: 'none', fontFamily: "'Geist', sans-serif",
+    width: '100%', boxSizing: 'border-box',
+  }
+  const inputStyle = {
+    ...pinStyle, fontSize: 13, letterSpacing: 'normal', textAlign: 'left',
+  }
+
+  const handleSave = async () => {
+    const pw = password || currentPw  // ← prop 없으면 입력값 사용
+    if (!pw) { setError('현재 비밀번호를 입력해주세요'); return }
+    if (pin.length !== 6 || !/^\d+$/.test(pin)) { setError('숫자 6자리를 입력해주세요'); return }
+    if (pin !== pinConfirm) { setError('PIN이 일치하지 않아요'); return }
+    setLoading(true); setError(null)
+      // ── 비밀번호 검증 추가 ──
+    if (!password) {  // prop으로 안 왔을 때만 검증 (직접 입력한 경우)
+      const { error: authError } = await supabase.auth.signInWithPassword({
+        email: session.user.email,
+        password: currentPw
+      })
+      if (authError) { setError('비밀번호가 틀렸어요'); setLoading(false); return }
+    }
+
+    const encrypted = await encryptPw(pin, pw)  // ← pw 사용
+    localStorage.setItem('bd_enc', encrypted)
+    const hash = await hashPin(pin)
+    const { error } = await supabase.from('users').update({ pin_hash: hash }).eq('id', session.user.id)
+    if (error) { setError(error.message); setLoading(false); return }
+    setLoading(false)
+    onDone()
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:2000, padding:20 }}>
+      <div style={{ background: modalBg, border:`1px solid ${modalBdr}`, borderRadius:12, width:'100%', maxWidth:360, overflow:'hidden', fontFamily:"'Geist', sans-serif" }}>
+        {/* 헤더 */}
+        <div style={{ background: headerBg, padding:'14px 20px', borderBottom:`1px solid ${modalBdr}` }}>
+          <div style={{ fontSize:13, fontWeight:500, color: dk ? '#c4b5fd' : '#5b21b6' }}>🔐 PIN 설정</div>
+          <div style={{ fontSize:11, color: lblClr, marginTop:3 }}>다음부터 PIN 6자리만으로 빠르게 로그인할 수 있어요</div>
+        </div>
+        {/* 바디 */}
+        <div style={{ padding:'20px', display:'flex', flexDirection:'column', gap:14 }}>
+
+          {/* password prop 없을 때만 현재 비밀번호 입력 */}
+          {!password && (
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              <label style={{ fontSize:11, color: lblClr }}>현재 비밀번호</label>
+              <input type="password" value={currentPw}
+                onChange={e => setCurrentPw(e.target.value)}
+                placeholder="비밀번호 입력" style={inputStyle} autoFocus />
+            </div>
+          )}
+
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            <label style={{ fontSize:11, color: lblClr }}>새 PIN 6자리</label>
+            <input type="password" inputMode="numeric" maxLength={6}
+              value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+              placeholder="······" style={pinStyle} autoFocus={!!password} />
+          </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            <label style={{ fontSize:11, color: lblClr }}>PIN 확인</label>
+            <input type="password" inputMode="numeric" maxLength={6}
+              value={pinConfirm} onChange={e => setPinConfirm(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => e.key === 'Enter' && handleSave()}
+              placeholder="······" style={pinStyle} />
+          </div>
+          {error && <div style={{ fontSize:12, color:'#f87171' }}>{error}</div>}
+        </div>
+        {/* 푸터 */}
+        <div style={{ padding:'12px 20px', background: dk ? '#0d0d0d' : '#f9fafb', display:'flex', justifyContent:'flex-end', gap:8, borderTop:`1px solid ${modalBdr}` }}>
+          <button onClick={onDone} style={{ fontSize:12, padding:'6px 14px', borderRadius:6, border:`1px solid ${dk ? '#2a2a2a' : '#e5e7eb'}`, background:'transparent', color: lblClr, cursor:'pointer', fontFamily:"'Geist', sans-serif" }}>
+            나중에
+          </button>
+          <button onClick={handleSave} disabled={loading} style={{ fontSize:12, padding:'6px 16px', borderRadius:6, border:'none', background: loading ? '#4c1d95' : accent, color:'#f0f0f0', cursor: loading ? 'not-allowed':'pointer', fontWeight:500, fontFamily:"'Geist', sans-serif" }}>
+            {loading ? '저장 중...' : 'PIN 저장'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 로그인 화면 ── Sprint 3 ──────────────────────────────────────────────────
+function LoginScreen({ darkMode, setDarkMode, onLoginSuccess }) {
+  const [tab, setTab] = useState('login')   // login | signup | pinlogin
+  const [email, setEmail] = useState(() => localStorage.getItem('bd_email') || '')
+  const [password, setPassword] = useState('')
+  const [alias, setAlias] = useState('')
+  const [aliasManuallyEdited, setAliasManuallyEdited] = useState(false)
+  const [pin, setPin] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
+
+   // 앱 시작 시 — 저장된 이메일+enc 있으면 PIN 로그인 탭으로
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('bd_email')
+    const savedEnc   = localStorage.getItem('bd_enc')
+    if (savedEmail && savedEnc) setTab('pinlogin')
+  }, [])
+
+  const handleEmailChange = (v) => {
+    setEmail(v)
+    if (tab === 'signup' && !aliasManuallyEdited) setAlias(v.split('@')[0] || '')
+  }
+
+  // ── 일반 로그인 → App으로 비밀번호 전달 (PIN 설정 모달용) ──
   const handleLogin = async () => {
     setLoading(true); setError(null)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) setError(error.message)
+    if (error) { setError(error.message); setLoading(false); return }
+    localStorage.setItem('bd_email', email)
+    onLoginSuccess(password)  // App에서 PIN 설정 여부 판단
     setLoading(false)
   }
 
+  // ── 회원가입 ──
   const handleSignup = async () => {
     if (!alias.trim()) { setError('얼라이어스를 입력해주세요'); return }
     setLoading(true); setError(null); setSuccess(null)
@@ -1228,16 +1554,31 @@ function LoginScreen({ darkMode, setDarkMode }) {
     })
     if (error) { setError(error.message); setLoading(false); return }
     if (data?.user?.id) {
-      await supabase.from('users').insert({
-        id: data.user.id,
-        alias: alias.trim(),
-        email: email,
-      })
+      await supabase.from('users').insert({ id: data.user.id, alias: alias.trim(), email })
     }
-    setSuccess('가입 완료! 로그인해주세요.')
+    localStorage.setItem('bd_email', email)
+    onLoginSuccess(password)  // 가입 직후도 PIN 설정 모달로
     setLoading(false)
   }
+  const handlePinLogin = async () => {
+    if (pin.length !== 6) { setError('PIN 6자리를 입력해주세요'); return }
+    setLoading(true); setError(null)
+    // DB에서 pin_hash 가져와서 검증
+    const { data: userData } = await supabase.from('users').select('pin_hash').eq('email', email).single()
+    if (!userData?.pin_hash) { setError('PIN이 등록되지 않았어요'); setLoading(false); return }
+    const hash = await hashPin(pin)
+    if (hash !== userData.pin_hash) { setError('PIN이 틀렸어요'); setPin(''); setLoading(false); return }
+    // PIN 일치 → localStorage에서 비밀번호 복호화 → 자동 로그인
+    const savedEnc = localStorage.getItem('bd_enc')
+    const pw = await decryptPw(pin, savedEnc)
+    if (!pw) { setError('저장된 인증 정보가 없어요. 이메일/비밀번호로 다시 로그인해주세요'); setLoading(false); setTab('login'); return }
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pw })
+    if (error) { setError('자동 로그인 실패. 이메일/비밀번호로 로그인해주세요'); setTab('login'); setLoading(false); return }
+    setLoading(false)
+    // 세션 생성 완료 → App 자동 이동
+  }
 
+  // ── 스타일 ──
   const dk = darkMode
   const bg        = dk ? '#0d0d0d' : '#f9fafb'
   const cardBg    = dk ? '#111111' : '#ffffff'
@@ -1253,111 +1594,137 @@ function LoginScreen({ darkMode, setDarkMode }) {
   const tabBdr    = dk ? '#2a2a2a' : '#e5e7eb'
 
   const inputStyle = {
-    fontSize:13, padding:'9px 11px', borderRadius:8,
-    border:`1px solid ${inputBdr}`, background: inputBg,
-    color: inputClr, outline:'none', fontFamily:"'Geist', sans-serif",
-    width:'100%', boxSizing:'border-box',
+    fontSize: 13, padding: '9px 11px', borderRadius: 8,
+    border: `1px solid ${inputBdr}`, background: inputBg,
+    color: inputClr, outline: 'none', fontFamily: "'Geist', sans-serif",
+    width: '100%', boxSizing: 'border-box',
+  }
+  const pinStyle = {
+    ...inputStyle,
+    fontSize: 24, letterSpacing: 10, textAlign: 'center', fontWeight: 500,
+  }
+  const btnStyle = (disabled) => ({
+    fontSize: 13, padding: '10px', borderRadius: 8, border: 'none',
+    background: disabled ? '#4c1d95' : '#7c3aed',
+    color: '#ffffff', cursor: disabled ? 'not-allowed' : 'pointer',
+    fontWeight: 500, marginTop: 4, fontFamily: "'Geist', sans-serif",
+    width: '100%',
+  })
+  const ghostBtn = {
+    fontSize: 12, background: 'transparent', border: 'none',
+    color: lblClr, cursor: 'pointer', fontFamily: "'Geist', sans-serif",
+    textAlign: 'center', width: '100%', padding: '4px 0',
   }
 
   return (
     <div style={{
-      minHeight:'100vh', background: bg,
-      display:'flex', alignItems:'center', justifyContent:'center',
-      fontFamily:"'Geist', sans-serif", transition:'background .25s',
+      minHeight: '100vh', background: bg,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontFamily: "'Geist', sans-serif", transition: 'background .25s',
     }}>
       <div style={{
-        background: cardBg, border:`1px solid ${cardBdr}`, borderRadius:14,
-        padding:'36px 32px', width:360,
-        display:'flex', flexDirection:'column', gap:16,
+        background: cardBg, border: `1px solid ${cardBdr}`, borderRadius: 14,
+        padding: '36px 32px', width: 360,
+        display: 'flex', flexDirection: 'column', gap: 16,
         boxShadow: dk ? '0 20px 40px rgba(0,0,0,0.5)' : '0 8px 24px rgba(0,0,0,0.08)',
-        transition:'all .25s',
       }}>
+
         {/* 다크/라이트 토글 */}
-        <div style={{ display:'flex', justifyContent:'flex-end' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={() => setDarkMode(d => !d)} style={{
-            fontSize:11, padding:'3px 10px', borderRadius:5,
-            border:`1px solid ${toggleBdr}`, background:'transparent',
-            color: toggleClr, cursor:'pointer', fontFamily:"'Geist', sans-serif",
+            fontSize: 11, padding: '3px 10px', borderRadius: 5,
+            border: `1px solid ${toggleBdr}`, background: 'transparent',
+            color: toggleClr, cursor: 'pointer', fontFamily: "'Geist', sans-serif",
           }}>{dk ? '☀️ 라이트' : '🌙 다크'}</button>
         </div>
 
         {/* 로고 */}
-        <div style={{ fontSize:20, fontWeight:600, color: logoClr, marginBottom:6, display:'flex', alignItems:'center', gap:8 }}>
+        <div style={{ fontSize: 20, fontWeight: 600, color: logoClr, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{
-            width:26, height:26, borderRadius:7,
-            background:'linear-gradient(135deg,#175BFF,#8A2BFF)',
-            display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0,
+            width: 26, height: 26, borderRadius: 7,
+            background: 'linear-gradient(135deg,#175BFF,#8A2BFF)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
           }}>
-            <span style={{ fontSize:11, fontWeight:700, color:'white', letterSpacing:'-0.5px' }}>BD</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: 'white', letterSpacing: '-0.5px' }}>BD</span>
           </div>
           Sales<span style={{ color: accent }}>Gear</span>
         </div>
 
-        {/* 이미지 슬롯 */}
-        <img src="/logo.svg" alt="" style={{ width:180, height:180, display:'block', margin:'0 auto 8px' }} />
+        {/* 아름다운 SVG 🎨 */}
+        <img src="/logo.svg" alt="" style={{ width: 180, height: 180, display: 'block', margin: '0 auto 8px' }} />
 
-        {/* 탭 */}
-        <div style={{ display:'flex', borderBottom:`1px solid ${tabBdr}`, marginBottom:4 }}>
-          {[['login','로그인'],['signup','회원가입']].map(([t, label]) => (
-            <button key={t} onClick={() => { setTab(t); setError(null); setSuccess(null) }} style={{
-              flex:1, fontSize:13, padding:'8px 0', border:'none', background:'transparent',
-              color: tab===t ? accent : toggleClr,
-              fontWeight: tab===t ? 600 : 400,
-              borderBottom: tab===t ? `2px solid ${accent}` : '2px solid transparent',
-              cursor:'pointer', fontFamily:"'Geist', sans-serif", transition:'all .15s',
-              marginBottom:-1,
-            }}>{label}</button>
-          ))}
-        </div>
-
-        {/* 이메일 */}
-        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-          <label style={{ fontSize:11, color: lblClr }}>이메일</label>
-          <input type="email" value={email} onChange={e => handleEmailChange(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && (tab==='login' ? handleLogin() : handleSignup())}
-            placeholder="name@company.com" style={inputStyle} />
-        </div>
-
-        {/* 비밀번호 */}
-        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-          <label style={{ fontSize:11, color: lblClr }}>비밀번호</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && (tab==='login' ? handleLogin() : handleSignup())}
-            placeholder="••••••••" style={inputStyle} />
-        </div>
-
-        {/* 얼라이어스 — 회원가입 탭에서만 */}
-        {tab === 'signup' && (
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            <label style={{ fontSize:11, color: lblClr }}>얼라이어스 <span style={{ color: accent }}>*</span></label>
-            <input type="text" value={alias} onChange={e => handleAliasChange(e.target.value)}
-              placeholder={email.split('@')[0] || '표시될 이름'}
-              style={inputStyle} />
-            <span style={{ fontSize:11, color: lblClr }}>담당자명으로 표시돼요 (예: jake.min, 박과장)</span>
+        {/* ── PIN 로그인 화면 ── */}
+        {tab === 'pinlogin' && <>
+          <div style={{ fontSize: 13, fontWeight: 500, color: accent }}>안녕하세요 👋</div>
+          <div style={{ fontSize: 12, color: lblClr }}>{email}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11, color: lblClr }}>PIN 6자리</label>
+            <input type="password" inputMode="numeric" maxLength={6}
+              value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => e.key === 'Enter' && handlePinLogin()}
+              placeholder="······" style={pinStyle} autoFocus />
           </div>
-        )}
+          {error && <div style={{ fontSize: 12, color: '#f87171' }}>{error}</div>}
+          <button onClick={handlePinLogin} disabled={loading} style={btnStyle(loading)}>
+            {loading ? '확인 중...' : '입장'}
+          </button>
+          <button onClick={() => { setTab('login'); setPin('') }} style={ghostBtn}>
+            이메일/비밀번호로 로그인
+          </button>
+        </>}
 
-        {/* 에러 / 성공 */}
-        {error && <div style={{ fontSize:12, color:'#f87171' }}>{error}</div>}
-        {success && <div style={{ fontSize:12, color:'#4ade80' }}>{success}</div>}
+        {/* ── 일반 로그인 / 회원가입 ── */}
+        {(tab === 'login' || tab === 'signup') && <>
+          <div style={{ display: 'flex', borderBottom: `1px solid ${tabBdr}`, marginBottom: 4 }}>
+            {[['login', '로그인'], ['signup', '회원가입']].map(([t, label]) => (
+              <button key={t} onClick={() => { setTab(t); setError(null); setSuccess(null) }} style={{
+                flex: 1, fontSize: 13, padding: '8px 0', border: 'none', background: 'transparent',
+                color: tab === t ? accent : toggleClr,
+                fontWeight: tab === t ? 600 : 400,
+                borderBottom: tab === t ? `2px solid ${accent}` : '2px solid transparent',
+                cursor: 'pointer', fontFamily: "'Geist', sans-serif",
+                marginBottom: -1,
+              }}>{label}</button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11, color: lblClr }}>이메일</label>
+            <input type="email" value={email} onChange={e => handleEmailChange(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && (tab === 'login' ? handleLogin() : handleSignup())}
+              placeholder="name@company.com" style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={{ fontSize: 11, color: lblClr }}>비밀번호</label>
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && (tab === 'login' ? handleLogin() : handleSignup())}
+              placeholder="••••••••" style={inputStyle} />
+          </div>      
+          {tab === 'signup' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <label style={{ fontSize: 11, color: lblClr }}>얼라이어스 <span style={{ color: accent }}>*</span></label>
+              <input type="text" value={alias} onChange={e => handleAliasChange(e.target.value)}
+                placeholder={email.split('@')[0] || '표시될 이름'} style={inputStyle} />
+              <span style={{ fontSize: 11, color: lblClr }}>담당자명으로 표시돼요 (예: jake, danny)</span>
+            </div>
+          )}
+          {error && <div style={{ fontSize: 12, color: '#f87171' }}>{error}</div>}
+          {success && <div style={{ fontSize: 12, color: '#4ade80' }}>{success}</div>}
+          <button onClick={tab === 'login' ? handleLogin : handleSignup} disabled={loading} style={btnStyle(loading)}>
+            {loading
+              ? (tab === 'login' ? '입장 중...' : '가입 중...')
+              : (tab === 'login' ? '입장' : '회원가입')}
+          </button> 
+          {tab === 'login' && localStorage.getItem('bd_enc') && (
+          <button onClick={() => { setTab('pinlogin'); setError(null) }} style={ghostBtn}>
+          PIN으로 로그인
+          </button>
+          )}  
+        </>}
 
-        {/* 버튼 */}
-        <button onClick={tab === 'login' ? handleLogin : handleSignup} disabled={loading}
-          style={{
-            fontSize:13, padding:'10px', borderRadius:8, border:'none',
-            background: loading ? '#4c1d95' : '#7c3aed',
-            color:'#ffffff', cursor: loading ? 'not-allowed' : 'pointer',
-            fontWeight:500, marginTop:4, fontFamily:"'Geist', sans-serif",
-            transition:'background .15s',
-          }}
-        >
-          {loading ? (tab==='login' ? '로그인 중...' : '가입 중...') : (tab==='login' ? '로그인' : '회원가입')}
-        </button>
       </div>
     </div>
   )
 }
-
 
 // ── 프로젝트 추가 모달 ── Sprint 2 ───────────────────
 function AddProjectModal({ quarters, owners, productCats, session, darkMode, onClose, onSaved }) {
