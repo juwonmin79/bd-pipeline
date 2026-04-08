@@ -507,7 +507,12 @@ export default function App() {
           )}
         </div>
           {/* 로그아웃 */}
-          <button onClick={() => supabase.auth.signOut()} style={{
+          <button onClick={async () => {
+            if (presenceChannelRef.current) {
+              await presenceChannelRef.current.untrack()
+            }
+            supabase.auth.signOut()
+          }} style={{
             fontSize:12, padding:'0 10px', height:30, borderRadius:6,
             border:'1px solid ' + (darkMode ? '#2a2a2a' : '#d1d5db'),
             background:'transparent',
