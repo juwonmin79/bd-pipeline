@@ -127,6 +127,8 @@ export default function App() {
   const [changePwOpen, setChangePwOpen] = useState(false)
   const [changePinOpen, setChangePinOpen] = useState(false)
   const [toast, setToast] = useState(null)
+  const [onlineUsers, setOnlineUsers] = useState([]) // Presence: 접속 중 유저 목록
+  const presenceChannelRef = useRef(null)
 
   const showToast = (msg, type='success') => {
   setToast({ msg, type })
@@ -183,6 +185,75 @@ export default function App() {
       })
       .catch(() => { setRates(FALLBACK_RATES); setRateStatus('fallback') })
   }, [])
+
+  // ── Realtime: Presence + DB 변경 자동 리로드 ──────
+  useEffect(() => {
+    if (!session) return
+
+    const alias = getAlias(session)
+    const userId = session.user.id
+
+    // ① Presence 채널
+    const channel = supabase.channel('bd-presence', {
+      config: { presence: { key: userId } }
+    })
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState()
+        // presenceState의 key = userId (channel track 시 key로 지정했으므로)
+        // 같은 userId가 여러 탭이어도 key 하나 → 아바타 1개
+        const users = Object.entries(state).map(([uid, arr]) => ({
+          userId: uid,
+          alias: arr[arr.length - 1]?.alias || '?',
+        }))
+        setOnlineUsers(users)
+      })
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        newPresences.forEach(p => {
+          if (p.userId !== userId) {
+            showToast(`${p.alias}님이 접속했어요 👋`)
+          }
+        })
+      })
+      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        leftPresences.forEach(p => {
+          if (p.userId !== userId) {
+            showToast(`${p.alias}님이 나갔어요`)
+          }
+        })
+      })
+
+    // ② DB 변경 감지 → 자동 리로드
+    channel
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'projects',
+        filter: 'is_simulation=eq.false',
+      }, (payload) => {
+        // 시뮬 모드 중이면 리로드 안 함 (변경 날아감 방지)
+        setMode(currentMode => {
+          if (currentMode !== 'sim') {
+            loadDeals()
+            showToast('다른 팀원이 데이터를 업데이트했어요 🔄', 'info')
+          }
+          return currentMode
+        })
+      })
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await channel.track({ alias, userId })
+      }
+    })
+
+    presenceChannelRef.current = channel
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [session]) // eslint-disable-line
 
   // ── 분기 목록 (DB 기반) ─────────────────────────
   const quarters = [...new Set(deals.map(d => d.quarter).filter(Boolean))].sort()
@@ -338,6 +409,52 @@ export default function App() {
         </div>
         {/* 우: 유저 + 로그아웃 + 다크 */}
         <div style={styles.navRight}>
+
+        {/* 접속 중 유저 아바타 띠 */}
+          {onlineUsers.length > 0 && (
+            <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+              {/* 초록 점 + 라벨 */}
+              <div style={{ width:6, height:6, borderRadius:'50%', background:'#4ade80', flexShrink:0 }} />
+              <span style={{ fontSize:10, color: darkMode ? '#6b7280' : '#9ca3af', marginRight:4 }}>
+                {onlineUsers.length}명
+              </span>
+              {/* 아바타들 — 최대 5개 표시 */}
+              <div style={{ display:'flex', alignItems:'center' }}>
+                {onlineUsers.slice(0, 5).map((u, i) => {
+                  const isMe = u.userId === session?.user?.id
+                  return (
+                    <div key={u.userId} title={u.alias + (isMe ? ' (나)' : '')} style={{
+                      width:24, height:24, borderRadius:'50%',
+                      background: isMe
+                        ? (darkMode ? '#1e1635' : '#ede9fe')
+                        : (darkMode ? '#1a2a1a' : '#dcfce7'),
+                      border: `2px solid ${isMe ? '#7c3aed' : '#4ade80'}`,
+                      display:'flex', alignItems:'center', justifyContent:'center',
+                      fontSize:10, fontWeight:600,
+                      color: isMe ? '#a78bfa' : '#16a34a',
+                      marginLeft: i === 0 ? 0 : -6,
+                      zIndex: 10 - i,
+                      cursor:'default',
+                      boxShadow: darkMode ? '0 0 0 1px #0a0a0a' : '0 0 0 1px #fff',
+                    }}>
+                      {u.alias?.[0]?.toUpperCase() || '?'}
+                    </div>
+                  )
+                })}
+                {onlineUsers.length > 5 && (
+                  <div style={{
+                    width:24, height:24, borderRadius:'50%',
+                    background: darkMode ? '#1f1f1f' : '#f3f4f6',
+                    border: `2px solid ${darkMode ? '#2a2a2a' : '#d1d5db'}`,
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    fontSize:9, color: darkMode ? '#6b7280' : '#9ca3af',
+                    marginLeft:-6, zIndex:4,
+                    boxShadow: darkMode ? '0 0 0 1px #0a0a0a' : '0 0 0 1px #fff',
+                  }}>+{onlineUsers.length - 5}</div>
+                )}
+              </div>
+            </div>
+          )}
 
         {/* 유저 */}
         <div style={{ position:'relative' }}>
@@ -688,12 +805,18 @@ export default function App() {
       {toast && (
         <div style={{
           position:'fixed', bottom:24, right:24, zIndex:9999,
-          background: darkMode ? '#1e1635' : '#ede9fe',
-          border: '1px solid #7c3aed',
-          color: darkMode ? '#c4b5fd' : '#5b21b6',
+          background: toast.type === 'info'
+            ? (darkMode ? '#0f2010' : '#f0fdf4')
+            : (darkMode ? '#1e1635' : '#ede9fe'),
+          border: `1px solid ${toast.type === 'info' ? '#4ade80' : '#7c3aed'}`,
+          color: toast.type === 'info'
+            ? (darkMode ? '#4ade80' : '#16a34a')
+            : (darkMode ? '#c4b5fd' : '#5b21b6'),
           padding:'10px 18px', borderRadius:8, fontSize:13, fontWeight:500,
           fontFamily:"'Geist', sans-serif",
-          boxShadow:'0 4px 16px rgba(124,58,237,0.3)',
+          boxShadow: toast.type === 'info'
+            ? '0 4px 16px rgba(74,222,128,0.2)'
+            : '0 4px 16px rgba(124,58,237,0.3)',
         }}>{toast.msg}</div>
       )}
     </div>
