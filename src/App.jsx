@@ -410,24 +410,20 @@ export default function App() {
         {/* 우: 유저 + 로그아웃 + 다크 */}
         <div style={styles.navRight}>
 
-        {/* 접속 중 유저 아바타 띠 */}
+        {/* 접속 중 유저 아바타 띠 — 나 포함 전체 */}
           {onlineUsers.length > 0 && (
             <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-              {/* 초록 점 + 라벨 */}
               <div style={{ width:6, height:6, borderRadius:'50%', background:'#4ade80', flexShrink:0 }} />
               <span style={{ fontSize:10, color: darkMode ? '#6b7280' : '#9ca3af', marginRight:4 }}>
                 {onlineUsers.length}명
               </span>
-              {/* 아바타들 — 최대 5개 표시 */}
               <div style={{ display:'flex', alignItems:'center' }}>
                 {onlineUsers.slice(0, 5).map((u, i) => {
                   const isMe = u.userId === session?.user?.id
                   return (
                     <div key={u.userId} title={u.alias + (isMe ? ' (나)' : '')} style={{
                       width:24, height:24, borderRadius:'50%',
-                      background: isMe
-                        ? (darkMode ? '#1e1635' : '#ede9fe')
-                        : (darkMode ? '#1a2a1a' : '#dcfce7'),
+                      background: isMe ? (darkMode ? '#1e1635' : '#ede9fe') : (darkMode ? '#1a2a1a' : '#dcfce7'),
                       border: `2px solid ${isMe ? '#7c3aed' : '#4ade80'}`,
                       display:'flex', alignItems:'center', justifyContent:'center',
                       fontSize:10, fontWeight:600,
@@ -460,7 +456,6 @@ export default function App() {
         <div style={{ position:'relative' }}>
           <div style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer' }}
             onClick={() => setProfileOpen(o => !o)}>
-            <div style={styles.avatar}>{getAlias(session)[0]?.toUpperCase()}</div>
             <span style={styles.userName}>{getAlias(session)}</span>
             <span style={{ fontSize:10, color: darkMode ? '#6b7280' : '#9ca3af' }}>▾</span>
           </div>
