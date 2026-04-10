@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
 import Planning from './pages/Planning'
 import Reserve from './pages/Reserve'
-import Note from './pages/Note'
+import Node from './pages/Node'
 
 // ── PIN 암호화/복호화 헬퍼 ────────────────────────
 async function deriveKey(pin) {
@@ -110,7 +110,7 @@ export default function App() {
   const GEARS = [
     { key:'planning', label:'Planning', badge:'P', color:'#EEEDFE', textColor:'#3C3489' },
     { key:'reserve',  label:'Reserve',  badge:'R', color:'#E1F5EE', textColor:'#085041' },
-    { key:'note',     label:'Note',     badge:'N', color:'#E6F1FB', textColor:'#0C447C' },
+    { key:'node',     label:'Node',     badge:'N', color:'#E6F1FB', textColor:'#0C447C' },
     { key:'dev',      label:'Dev',      badge:'D', color: dk?'#1a1a1a':'#f3f4f6', textColor:textMuted, locked:true },
   ]
   const PLANNING_TABS = [
@@ -210,7 +210,7 @@ export default function App() {
       <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
         {gear === 'planning' && <Planning tab={planningTab} darkMode={dk} session={session} />}
         {gear === 'reserve'  && <Reserve darkMode={dk} session={session} />}
-        {gear === 'note'     && <Note darkMode={dk} session={session} />}
+        {gear === 'node'     && <Node darkMode={dk} session={session} />}
       </div>
 
       {/* 모달들 */}
