@@ -276,7 +276,7 @@ function PinSetupModal({ darkMode, session, password, onDone }) {
   const dk = darkMode
   const modalBg = dk?'#111':'#ffffff'; const modalBdr = dk?'#2a1f5c':'#e5e7eb'
   const headerBg = dk?'#1e1635':'#f5f3ff'
-  const pinStyle = { fontSize:24, letterSpacing:10, textAlign:'center', fontWeight:500, padding:'9px 11px', borderRadius:8, border:`1px solid ${dk?'#2a2a2a':'#e5e7eb'}`, background:dk?'#1a1a1a':'#f3f4f6', color:dk?'#f0f0f0':'#111827', outline:'none', fontFamily:"'Geist', sans-serif", width:'100%', boxSizing:'border-box' }
+  const pinStyle = { fontSize:24, letterSpacing:10, textAlign:'center', fontWeight:500, padding:'9px 11px', borderRadius:8, border:`1px solid ${dk?'#2a2a2a':'#e5e7eb'}`, background:dk?'#1a1a1a':'#f3f4f6', color:dk?'#f0f0f0':'#111827', outline:'none', fontFamily:"'Geist', sans-serif", width:'100%', boxSizing:'border-box', msRevealButton: 'none' }
   const inputStyle = { ...pinStyle, fontSize:13, letterSpacing:'normal', textAlign:'left' }
   const handleSave = async () => {
     const pw = password || currentPw
