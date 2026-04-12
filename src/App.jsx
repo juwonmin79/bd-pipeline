@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabase'
 import Planning from './pages/Planning'
-import Reserve from './pages/Reserve'
+import Report from './pages/Report'
 import Node from './pages/Node'
 
 // ── PIN 암호화/복호화 헬퍼 ────────────────────────
@@ -109,9 +109,9 @@ export default function App() {
 
   const GEARS = [
     { key:'planning', label:'Planning', badge:'P', color:'#EEEDFE', textColor:'#3C3489' },
-    { key:'reserve',  label:'Reserve',  badge:'R', color:'#E1F5EE', textColor:'#085041' },
+    { key:'reserve',  label:'Report',  badge:'R', color:'#E1F5EE', textColor:'#085041' },
     { key:'node',     label:'Node',     badge:'N', color:'#E6F1FB', textColor:'#0C447C' },
-    { key:'dev',      label:'Dev',      badge:'D', color: dk?'#1a1a1a':'#f3f4f6', textColor:textMuted, locked:true },
+    { key:'dev',      label:'Designer', badge:'D', color:'#FEF3FB', textColor:'#9B3AAD', locked:true },
   ]
   const PLANNING_TABS = [
     { key:'team', label:'Team' }, { key:'my', label:'My' },
@@ -143,9 +143,9 @@ export default function App() {
         <nav style={{ flex:1, padding:'8px 0', overflowY:'auto' }}>
           {GEARS.map(g => (
             <div key={g.key}>
-              <div onClick={() => !g.locked && setGear(g.key)} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', cursor: g.locked ? 'default' : 'pointer', background: gear===g.key ? (dk?'#1a1a1a':'#f5f3ff') : 'transparent', borderRight: gear===g.key ? '2px solid #7c3aed' : '2px solid transparent', opacity: g.locked ? 0.4 : 1 }}>
+              <div onClick={() => !g.locked && setGear(g.key)} style={{ display:'flex', alignItems:'center', gap:10, padding:'7px 12px', cursor: g.locked ? 'default' : 'pointer', background: gear===g.key ? (dk?'#1a1a1a':'#f5f3ff') : 'transparent', borderRight: gear===g.key ? '2px solid #7c3aed' : '2px solid transparent', opacity: g.locked ? 0.65 : 1 }}>
                 <div style={{ width:24, height:24, borderRadius:6, background:g.color, display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:500, color:g.textColor, flexShrink:0 }}>{g.badge}</div>
-                {!collapsed && <span style={{ fontSize:12, fontWeight:500, color: g.locked ? textMuted : textPrimary, whiteSpace:'nowrap' }}>{g.label}</span>}
+                {!collapsed && <span style={{ fontSize:12, fontWeight:500, color: textPrimary, whiteSpace:'nowrap' }}>{g.label}</span>}
               </div>
               {!collapsed && gear==='planning' && g.key==='planning' && (
                 <div style={{ paddingLeft:46, paddingBottom:4 }}>
@@ -209,7 +209,7 @@ export default function App() {
       {/* MAIN CONTENT */}
       <div style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
         {gear === 'planning' && <Planning tab={planningTab} darkMode={dk} session={session} />}
-        {gear === 'reserve'  && <Reserve darkMode={dk} session={session} />}
+        {gear === 'reserve'  && <Report darkMode={dk} session={session} />}
         {gear === 'node'     && <Node darkMode={dk} session={session} />}
       </div>
 
