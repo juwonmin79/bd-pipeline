@@ -4,7 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import {
   FALLBACK_RATES, CCY_SYMS, CCY_LABELS,
   STATUS_STYLE, CATEGORY_STYLE,
-  normalize, expandSearch, getAlias, fmtQuarter, COUNTRY_OPTIONS,
+  normalize, expandSearch, getAlias, fmtQuarter, COUNTRY_OPTIONS, fmtAmt,
 } from './constants'
 import DealDrawer from './DealDrawer'
 import ColumnFilter from './ColumnFilter'
@@ -94,15 +94,7 @@ export default function ScenarioEditor({ darkMode, session, lastSeen }) {
     return true
   })
 
-  const cvt   = (krw) => krw * rates[ccy]
-  const fmtK  = (krw) => {
-    if (!krw) return '—'
-    const v = cvt(krw)
-    const s = CCY_SYMS[ccy]
-    if (ccy === 'KRW') return s + Math.round(v).toLocaleString() + 'K'
-    if (ccy === 'JPY') return s + Math.round(v / 10).toLocaleString() + '万'
-    return s + v.toFixed(1) + 'K'
-  }
+  const fmtK = (man) => fmtAmt(man, rates, ccy)
 
   // ── ColumnFilter opts + 2차 필터 + 정렬 ──
   const statusLabelMap = Object.fromEntries(Object.entries(STATUS_STYLE).map(([k,v]) => [k, v.label]))
@@ -226,12 +218,12 @@ export default function ScenarioEditor({ darkMode, session, lastSeen }) {
               })} barGap={2} barCategoryGap="28%">
                 <CartesianGrid strokeDasharray="3 3" stroke={darkMode?'#1f1f1f':'#f0f0f0'} vertical={false} />
                 <XAxis dataKey="q" tick={{ fontSize:10, fill:'#6b7280' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize:10, fill:'#6b7280' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? Math.round(v/1000)+'B' : '0'} width={32} />
+                <YAxis tick={{ fontSize:10, fill:'#6b7280' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? parseFloat((v/10000).toFixed(1))+'억' : '0'} width={36} />
                 <Tooltip
                   contentStyle={{ background: darkMode?'#111':'#fff', border:`1px solid ${darkMode?'#2a2a2a':'#e5e7eb'}`, borderRadius:8, fontSize:11, fontFamily:"'Geist', sans-serif" }}
                   labelStyle={{ color:'#a78bfa', fontWeight:500, marginBottom:4 }}
                   itemStyle={{ color: darkMode?'#d1d5db':'#374151' }}
-                  formatter={(v, name) => [v.toLocaleString()+'K', name]}
+                  formatter={(v, name) => [parseFloat((v/10000).toFixed(1))+'억', name]}
                 />
                 <Bar dataKey="target"   name="목표"    fill={darkMode?'#2a2a2a':'#d1d5db'} radius={[3,3,0,0]} maxBarSize={16} />
                 <Bar dataKey="won"      name="확정"    fill="#7c3aed" radius={[3,3,0,0]} maxBarSize={16} />
@@ -261,12 +253,12 @@ export default function ScenarioEditor({ darkMode, session, lastSeen }) {
               })} barCategoryGap="35%">
                 <CartesianGrid strokeDasharray="3 3" stroke={darkMode?'#1f1f1f':'#f0f0f0'} vertical={false} />
                 <XAxis dataKey="q" tick={{ fontSize:10, fill:'#6b7280' }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize:10, fill:'#6b7280' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? '+'+Math.round(v/1000)+'B' : Math.round(v/1000)+'B'} width={38} />
+                <YAxis tick={{ fontSize:10, fill:'#6b7280' }} axisLine={false} tickLine={false} tickFormatter={v => v > 0 ? '+'+parseFloat((v/10000).toFixed(1))+'억' : parseFloat((v/10000).toFixed(1))+'억'} width={42} />
                 <Tooltip
                   contentStyle={{ background: darkMode?'#111':'#fff', border:`1px solid ${darkMode?'#2a2a2a':'#e5e7eb'}`, borderRadius:8, fontSize:11, fontFamily:"'Geist', sans-serif" }}
                   labelStyle={{ color:'#a78bfa', fontWeight:500, marginBottom:4 }}
-                  formatter={(v) => [(v >= 0 ? '+' : '') + v.toLocaleString() + 'K', 'GAP']}
-                  itemStyle={{ color: '#f0f0f0' }}
+                  formatter={(v) => [(v >= 0 ? '+' : '') + parseFloat((v/10000).toFixed(1)) + '억', 'GAP']}
+                  itemStyle={{ color: darkMode ? '#f0f0f0' : '#111827' }}
                 />
                 <ReferenceLine y={0} stroke={darkMode?'#2a2a2a':'#e5e7eb'} strokeWidth={1} />
                 <Bar dataKey="gap" name="GAP" radius={[3,3,0,0]} maxBarSize={22}>
@@ -571,7 +563,7 @@ function EditPanel({ deal, fmtK, quarters, owners, productCats, onApply, onCance
         </div>
         <div style={_styles.editField}><label style={_styles.editLabel}>예상 계약월</label><input style={_styles.editInput} value={contractMonth} onChange={e => setContractMonth(e.target.value)} type="month" /></div>
         <div style={_styles.editField}><label style={_styles.editLabel}>확률 (%)</label><input style={_styles.editInput} type="number" value={conf} min={0} max={100} onChange={e => setConf(Number(e.target.value))} /></div>
-        <div style={_styles.editField}><label style={_styles.editLabel}>계약금액 (K KRW)</label><input style={_styles.editInput} type="number" value={amt} step={1000} onChange={e => setAmt(Number(e.target.value))} /><span style={_styles.editHint}>반영: {fmtK(reflect)}</span></div>
+        <div style={_styles.editField}><label style={_styles.editLabel}>계약금액 (만원)</label><input style={_styles.editInput} type="number" value={amt} step={1000} onChange={e => setAmt(Number(e.target.value))} /><span style={_styles.editHint}>반영: {fmtK(reflect)}</span></div>
       </div>
       <div style={{ ..._styles.editGrid, gridTemplateColumns:'1fr 1fr 1fr 2fr', marginBottom:10 }}>
         <div style={_styles.editField}><label style={_styles.editLabel}>착수월</label><input style={_styles.editInput} value={startMonth} onChange={e => setStartMonth(e.target.value)} type="month" /></div>
@@ -878,7 +870,7 @@ function AddProjectModal({ quarters, owners, productCats, session, darkMode, onC
             <div style={field}><label style={lbl}>예상 계약월</label><input style={inp} type="month" value={contractMonth} onChange={e => setContractMonth(e.target.value)} /></div>
             <div style={field}><label style={lbl}>확률 (%)</label><input style={inp} type="number" min={0} max={100} value={conf} onChange={e => setConf(Number(e.target.value))} /></div>
             <div style={field}><label style={lbl}>계약금액 (K KRW)</label><input style={inp} type="number" step={1000} value={amt} onChange={e => setAmt(Number(e.target.value))} /></div>
-            <div style={field}><label style={lbl}>반영금액 (자동)</label><input style={{...inp,color:'#6b7280'}} value={reflect.toLocaleString()+' K'} readOnly /></div>
+            <div style={field}><label style={lbl}>반영금액 (자동)</label><input style={{...inp,color:'#6b7280'}} value={parseFloat((reflect/10000).toFixed(1))+'억'} readOnly /></div>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 2fr', gap:12, marginBottom:14 }}>
             <div style={field}><label style={lbl}>착수월</label><input style={inp} type="month" value={startMonth} onChange={e => setStartMonth(e.target.value)} /></div>

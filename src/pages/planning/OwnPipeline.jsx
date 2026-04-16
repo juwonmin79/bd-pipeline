@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '../../supabase'
 import { useDeals } from './useDeals'
 import { useOpportunities } from './useOpportunities'
-import { FALLBACK_RATES, CCY_SYMS, CCY_LABELS, STATUS_STYLE, OPP_STATUS_STYLE, OPP_STATUS_DB_TO_LABEL, OPP_STATUS_LABEL_TO_DB, OPP_STATUS_OPTIONS, getPriorityGroup, PRIORITY_LABEL, getAlias, getWeekLabel, normalize, expandSearch, fmtQuarter } from './constants'
+import { FALLBACK_RATES, CCY_SYMS, CCY_LABELS, STATUS_STYLE, OPP_STATUS_STYLE, OPP_STATUS_DB_TO_LABEL, OPP_STATUS_LABEL_TO_DB, OPP_STATUS_OPTIONS, getPriorityGroup, PRIORITY_LABEL, getAlias, getWeekLabel, normalize, expandSearch, fmtQuarter, fmtAmt } from './constants'
 import DealDrawer, { StatusBadge, OppStatusBadge, PriorityBadge, ConfBar, ProductCatSelect } from './DealDrawer'
 import AddProjectModal from './AddProjectModal'
 import ColumnFilter from './ColumnFilter'
@@ -18,14 +18,7 @@ function useCurrency() {
       .then(data => { setRates({ KRW:1, USD:data.rates.USD, CNY:data.rates.CNY, JPY:data.rates.JPY, EUR:data.rates.EUR }); setRateStatus('live') })
       .catch(() => { setRates(FALLBACK_RATES); setRateStatus('fallback') })
   }, [])
-  const fmtK = (krw) => {
-    if (!krw) return '—'
-    const v = krw * rates[ccy]
-    const s = CCY_SYMS[ccy]
-    if (ccy === 'KRW') return s + Math.round(v).toLocaleString() + 'K'
-    if (ccy === 'JPY') return s + Math.round(v / 10).toLocaleString() + '万'
-    return s + v.toFixed(1) + 'K'
-  }
+  const fmtK = (man) => fmtAmt(man, rates, ccy)
   return { ccy, setCcy, rates, rateStatus, fmtK }
 }
 

@@ -121,6 +121,24 @@ export const fmtQuarter = (q) => {
   return `${m[1].slice(2)}Q${m[2]}`
 }
 
+// 금액 포맷 (DB 단위: 만원)
+// 890,000 → 89억 / 10,000 → 1억 / 1,000 → 0.1억
+export const fmtAmt = (man, rates, ccy = 'KRW') => {
+  if (!man) return '—'
+  const rate = rates ? (rates[ccy] || 1) : 1
+  const converted = man * rate
+  if (ccy === 'KRW') {
+    const uk = converted / 10000
+    return `${parseFloat(uk.toFixed(1))}억`
+  }
+  // 외화: 만원 → 원 → 외화 변환 후 K 단위
+  const won = man * 10000
+  const v = won * rate
+  const s = CCY_SYMS[ccy]
+  if (ccy === 'JPY') return s + Math.round(v / 10).toLocaleString() + '万'
+  return s + (v / 1000).toFixed(1) + 'K'
+}
+
 // 국가 옵션 (환율 기준)
 export const COUNTRY_OPTIONS = [
   { code: 'KR', label: 'KR — 한국' },
