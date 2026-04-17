@@ -129,8 +129,7 @@ export default function App() {
     { key:'dev',      label:'Designer', badge:'D', color:'#FEF3FB', textColor:'#9B3AAD', locked:true },
   ]
   const PLANNING_TABS = [
-    { key:'team', label:'팀 전체' }, { key:'my', label:'내 파이프라인' },
-    { key:'simulate', label:'시나리오 편집' },
+    { key:'team', label:'팀 파이프라인' }, { key:'my', label:'내 파이프라인' },
   ]
 
   return (
