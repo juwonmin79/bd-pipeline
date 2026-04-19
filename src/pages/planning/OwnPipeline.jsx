@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { supabase } from '../../supabase'
 import { useDeals } from './useDeals'
 import { useOpportunities } from './useOpportunities'
-import { FALLBACK_RATES, CCY_SYMS, CCY_LABELS, STATUS_STYLE, OPP_STATUS_STYLE, OPP_STATUS_DB_TO_LABEL, OPP_STATUS_LABEL_TO_DB, OPP_STATUS_OPTIONS, getPriorityGroup, PRIORITY_LABEL, getAlias, getWeekLabel, normalize, expandSearch, fmtQuarter, fmtAmt } from './constants'
+import { FALLBACK_RATES, CCY_SYMS, CCY_LABELS, STATUS_STYLE, OPP_STATUS_STYLE, OPP_STATUS_DB_TO_LABEL, OPP_STATUS_LABEL_TO_DB, OPP_STATUS_OPTIONS, getPriorityGroup, PRIORITY_LABEL, getAlias, getWeekLabel, normalize, expandSearch, fmtQuarter, fmtAmt, COUNTRY_OPTIONS } from './constants'
 import DealDrawer, { StatusBadge, OppStatusBadge, PriorityBadge, ConfBar, ProductCatSelect } from './DealDrawer'
 import AddProjectModal from './AddProjectModal'
 import ColumnFilter from './ColumnFilter'
@@ -56,6 +56,26 @@ export default function OwnPipeline({ darkMode, session, lastSeen }) {
   const handleOppSort  = (key, dir) => setOppSort({ key: dir ? key : null, dir })
 
   const dk = darkMode
+
+  // ── 드래그 리사이저 ──
+  const [splitRatio, setSplitRatio] = useState(0.45)
+  const containerRef = useRef(null)
+  const isDragging   = useRef(false)
+
+  const onDragStart = useCallback((e) => {
+    e.preventDefault()
+    isDragging.current = true
+    const move = (ev) => {
+      if (!isDragging.current || !containerRef.current) return
+      const rect  = containerRef.current.getBoundingClientRect()
+      const y     = (ev.touches ? ev.touches[0].clientY : ev.clientY) - rect.top
+      const ratio = Math.min(0.8, Math.max(0.2, y / rect.height))
+      setSplitRatio(ratio)
+    }
+    const up = () => { isDragging.current = false; window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); window.removeEventListener('touchmove', move); window.removeEventListener('touchend', up) }
+    window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
+    window.addEventListener('touchmove', move); window.addEventListener('touchend', up)
+  }, [])
 
   // 딜 필터 옵션 — 분기는 fmtQuarter 표시
   const statusLabelMap = Object.fromEntries(Object.entries(STATUS_STYLE).map(([k,v]) => [k, v.label]))
@@ -153,21 +173,21 @@ export default function OwnPipeline({ darkMode, session, lastSeen }) {
       </div>
 
       {/* ── 바디: 상/하 분할 ── */}
-      <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <div ref={containerRef} style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
 
         {/* ── 상단: 계약 건 ── */}
-        {/* 컬럼: 프로젝트 / 고객사 / 분기 / 상태 / 담당자 / 계약금액 / 반영금액 / 착수 / 종료 */}
-        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minHeight:0 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 24px 6px', flexShrink:0 }}>
-            <span style={s.sectionTitle}>계약 건</span>
-            <span style={s.sectionCount}>{columnFilteredDeals.length}건</span>
-            {columnFilteredDeals.length !== filteredDeals.length && (
-              <span style={{ fontSize:11, color:'#7c3aed' }}>/ 전체 {filteredDeals.length}건</span>
-            )}
-            <button style={s.addIconBtn} onClick={() => setAddProjectOpen(true)} title="계약 건 추가">+</button>
-          </div>
-          <div style={{ flex:1, overflowY:'auto', padding:'0 24px 12px' }}>
-            <div style={s.tableCard}>
+        <div style={{ height:`calc(${splitRatio * 100}% - 8px)`, overflowY:'auto', padding:'12px 24px 8px' }}>
+          <div style={s.tableCard}>
+            {/* 헤더 */}
+            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 16px', borderBottom:`1px solid ${dk?'#1f1f1f':'#e2e2e2'}` }}>
+              <span style={s.sectionTitle}>계약 건</span>
+              <span style={s.sectionCount}>{columnFilteredDeals.length}건</span>
+              {columnFilteredDeals.length !== filteredDeals.length && (
+                <span style={{ fontSize:11, color:'#7c3aed' }}>/ 전체 {filteredDeals.length}건</span>
+              )}
+              <button style={{ ...s.addIconBtn, marginLeft:'auto' }} onClick={() => setAddProjectOpen(true)} title="계약 건 추가">+</button>
+            </div>
+            <div style={{ overflowX:'auto' }}>
               <table style={s.tbl}>
                 <colgroup>
                   <col style={{ width:'22%' }} /><col style={{ width:'10%' }} /><col style={{ width:'8%' }} />
@@ -176,14 +196,11 @@ export default function OwnPipeline({ darkMode, session, lastSeen }) {
                 </colgroup>
                 <thead>
                   <tr>
-                    {/* 검색만 */}
                     <ColumnFilter label="프로젝트" align="left"   options={dealOpts.caseName} value={dealCf.caseName} onChange={v => setDealFilter('caseName',v)} thStyle={s.th} darkMode={dk} withSearch sortable={false} />
-                    {/* 체크박스만 */}
                     <ColumnFilter label="고객사"   align="left"   options={dealOpts.customer} value={dealCf.customer} onChange={v => setDealFilter('customer',v)} thStyle={s.th} darkMode={dk} />
                     <ColumnFilter label="분기"     align="center" options={dealOpts.quarter}  value={dealCf.quarter}  onChange={v => setDealFilter('quarter',v)}  thStyle={s.th} darkMode={dk} />
                     <ColumnFilter label="상태"     align="center" options={dealOpts.status}   value={dealCf.status}   onChange={v => setDealFilter('status',v)}   thStyle={s.th} darkMode={dk} />
                     <ColumnFilter label="담당자"   align="center" options={dealOpts.owner}    value={dealCf.owner}    onChange={v => setDealFilter('owner',v)}    thStyle={s.th} darkMode={dk} />
-                    {/* 정렬만 */}
                     <ColumnFilter label="계약금액" align="right"  options={[]} value={[]} onChange={()=>{}} onSort={dir => handleDealSort('book_amount',dir)} sortDir={dealSort.key==='book_amount'?dealSort.dir:null} thStyle={s.th} darkMode={dk} sortable filterable={false} />
                     <ColumnFilter label="반영금액" align="right"  options={[]} value={[]} onChange={()=>{}} onSort={dir => handleDealSort('reflect',dir)}     sortDir={dealSort.key==='reflect'?dealSort.dir:null}     thStyle={s.th} darkMode={dk} sortable filterable={false} />
                     <ColumnFilter label="착수"     align="center" options={[]} value={[]} onChange={()=>{}} onSort={dir => handleDealSort('start_month',dir)}  sortDir={dealSort.key==='start_month'?dealSort.dir:null}  thStyle={s.th} darkMode={dk} sortable filterable={false} />
@@ -201,10 +218,7 @@ export default function OwnPipeline({ darkMode, session, lastSeen }) {
                       onClick={() => setDrawerItem({ type:'deal', data:deal })}
                       onMouseEnter={e => e.currentTarget.style.background = dk?'#1a1a1a':'#f5f3ff'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <td style={s.td}>
-                        <div style={s.caseName}>{deal.case_name}</div>
-                        <div style={s.caseSub}>{deal.product_cat}</div>
-                      </td>
+                      <td style={s.td}><div style={s.caseName}>{deal.case_name}</div><div style={s.caseSub}>{deal.product_cat}</div></td>
                       <td style={s.td}><span style={s.chip}>{deal.customer}</span></td>
                       <td style={{ ...s.td, textAlign:'center' }}><span style={s.chip}>{fmtQuarter(deal.quarter)}</span></td>
                       <td style={{ ...s.td, textAlign:'center' }}><StatusBadge status={deal.status} /></td>
@@ -222,39 +236,50 @@ export default function OwnPipeline({ darkMode, session, lastSeen }) {
           </div>
         </div>
 
-        {/* ── 구분선 ── */}
-        <div style={{ flexShrink:0, height:1, borderTop:`1px dashed ${dk?'#2a2a2a':'#d1d5db'}`, margin:'4px 24px' }} />
+        {/* ── 드래그 핸들 ── */}
+        <div
+          onMouseDown={onDragStart} onTouchStart={onDragStart}
+          style={{ flexShrink:0, height:16, display:'flex', alignItems:'center', justifyContent:'center', cursor:'row-resize', userSelect:'none' }}>
+          <div style={{ width:'100%', height:1, background: dk?'#2a2a2a':'#e2e2e2', position:'relative' }}>
+            <div style={{ position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)', width:28, height:14, borderRadius:7, border:`1px solid ${dk?'#2a2a2a':'#e2e2e2'}`, background: dk?'#1a1a1a':'#fff', display:'flex', alignItems:'center', justifyContent:'center', gap:2 }}>
+              <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                <path d="M1 2.5L5 1L9 2.5" stroke={dk?'#4b5563':'#9ca3af'} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M1 5.5L5 7L9 5.5" stroke={dk?'#4b5563':'#9ca3af'} strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+          </div>
+        </div>
 
         {/* ── 하단: 사업 기회 ── */}
-        {/* 컬럼: 프로젝트 / 고객사 / 상태 / 담당자 / 예상금액 / 예상월 / 확도 / 중요도 */}
-        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minHeight:0 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 24px 6px', flexShrink:0 }}>
-            <span style={s.sectionTitle}>사업 기회</span>
-            <span style={s.sectionCount}>{columnFilteredOpps.length}건</span>
-            {columnFilteredOpps.length !== myOpportunities.length && (
-              <span style={{ fontSize:11, color:'#7c3aed' }}>/ 전체 {myOpportunities.length}건</span>
-            )}
-            <button style={s.addIconBtn} onClick={() => setAddOppOpen(true)} title="사업 기회 추가">+</button>
-          </div>
-
-          {myOpportunities.length === 0 ? (
-            <div style={{ textAlign:'center', padding:'32px 0' }}>
-              <p style={{ fontSize:13, color:'#6b7280' }}>등록된 사업 기회가 없어요</p>
+        <div style={{ height:`calc(${(1 - splitRatio) * 100}% - 8px)`, overflowY:'auto', padding:'0 24px 16px' }}>
+          <div style={s.tableCard}>
+            {/* 헤더 */}
+            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 16px', borderBottom:`1px solid ${dk?'#1f1f1f':'#e2e2e2'}` }}>
+              <span style={s.sectionTitle}>사업 기회</span>
+              <span style={s.sectionCount}>{columnFilteredOpps.length}건</span>
+              {columnFilteredOpps.length !== myOpportunities.length && (
+                <span style={{ fontSize:11, color:'#7c3aed' }}>/ 전체 {myOpportunities.length}건</span>
+              )}
+              <button style={{ ...s.addIconBtn, marginLeft:'auto' }} onClick={() => setAddOppOpen(true)} title="사업 기회 추가">+</button>
             </div>
-          ) : (
-            <div style={{ flex:1, overflowY:'auto', padding:'0 24px 16px', display:'flex', flexDirection:'column', gap:12 }}>
-              {['high','mid','low','dummy'].map(group => {
-                const items = oppGrouped[group]
-                if (items.length === 0) return null
-                const { label, color, bg } = PRIORITY_LABEL[group]
-                return (
-                  <div key={group}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-                      <span style={{ fontSize:11, fontWeight:500, background:bg, color, padding:'2px 10px', borderRadius:99 }}>{label}</span>
-                      <span style={s.sectionCount}>{items.length}건</span>
-                      <div style={{ flex:1, height:'0.5px', background: dk?'#1f1f1f':'#e2e2e2' }} />
-                    </div>
-                    <div style={s.tableCard}>
+
+            {myOpportunities.length === 0 ? (
+              <div style={{ textAlign:'center', padding:'32px 0' }}>
+                <p style={{ fontSize:13, color:'#6b7280' }}>등록된 사업 기회가 없어요</p>
+              </div>
+            ) : (
+              <>
+                {['high','mid','low','dummy'].map(group => {
+                  const items = oppGrouped[group]
+                  if (items.length === 0) return null
+                  const { label, color, bg } = PRIORITY_LABEL[group]
+                  return (
+                    <div key={group}>
+                      {/* 그룹 구분선 */}
+                      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 16px', borderBottom:`1px solid ${dk?'#1f1f1f':'#f0f0f0'}`, background: dk?'#0d0d0d':'#f8f8f8' }}>
+                        <span style={{ fontSize:11, fontWeight:500, background:bg, color, padding:'2px 10px', borderRadius:99 }}>{label}</span>
+                        <span style={s.sectionCount}>{items.length}건</span>
+                      </div>
                       <table style={s.tbl}>
                         <colgroup>
                           <col style={{ width:'22%' }} /><col style={{ width:'11%' }} /><col style={{ width:'10%' }} />
@@ -263,18 +288,13 @@ export default function OwnPipeline({ darkMode, session, lastSeen }) {
                         </colgroup>
                         <thead>
                           <tr>
-                            {/* 검색만 */}
-                            <ColumnFilter label="프로젝트" align="left" options={oppOpts.title}    value={oppCf.title}    onChange={v => setOppFilter('title',v)}    thStyle={s.th} darkMode={dk} withSearch sortable={false} />
-                            {/* 체크박스만 */}
-                            <ColumnFilter label="고객사"   align="left" options={oppOpts.customer} value={oppCf.customer} onChange={v => setOppFilter('customer',v)} thStyle={s.th} darkMode={dk} />
-                            {/* 체크박스만 */}
-                            <ColumnFilter label="상태"   align="center" options={oppOpts.status} value={oppCf.status} onChange={v => setOppFilter('status',v)} thStyle={s.th} darkMode={dk} />
-                            <ColumnFilter label="담당자" align="center" options={oppOpts.owner}  value={oppCf.owner}  onChange={v => setOppFilter('owner',v)}  thStyle={s.th} darkMode={dk} />
-                            {/* 정렬만 */}
+                            <ColumnFilter label="프로젝트" align="left"   options={oppOpts.title}    value={oppCf.title}    onChange={v => setOppFilter('title',v)}    thStyle={s.th} darkMode={dk} withSearch sortable={false} />
+                            <ColumnFilter label="고객사"   align="left"   options={oppOpts.customer} value={oppCf.customer} onChange={v => setOppFilter('customer',v)} thStyle={s.th} darkMode={dk} />
+                            <ColumnFilter label="상태"     align="center" options={oppOpts.status}   value={oppCf.status}   onChange={v => setOppFilter('status',v)}   thStyle={s.th} darkMode={dk} />
+                            <ColumnFilter label="담당자"   align="center" options={oppOpts.owner}    value={oppCf.owner}    onChange={v => setOppFilter('owner',v)}    thStyle={s.th} darkMode={dk} />
                             <ColumnFilter label="예상금액" align="right"  options={[]} value={[]} onChange={()=>{}} onSort={dir => handleOppSort('amount',dir)}        sortDir={oppSort.key==='amount'?oppSort.dir:null}        thStyle={s.th} darkMode={dk} sortable filterable={false} />
                             <ColumnFilter label="예상월"   align="center" options={[]} value={[]} onChange={()=>{}} onSort={dir => handleOppSort('expected_date',dir)} sortDir={oppSort.key==='expected_date'?oppSort.dir:null} thStyle={s.th} darkMode={dk} sortable filterable={false} />
                             <ColumnFilter label="확도"     align="center" options={[]} value={[]} onChange={()=>{}} onSort={dir => handleOppSort('confidence',dir)}    sortDir={oppSort.key==='confidence'?oppSort.dir:null}    thStyle={s.th} darkMode={dk} sortable filterable={false} />
-                            {/* 아무것도 없음 */}
                             <th style={{ ...s.th, textAlign:'center' }}>중요도</th>
                           </tr>
                         </thead>
@@ -282,33 +302,30 @@ export default function OwnPipeline({ darkMode, session, lastSeen }) {
                           {items.map(opp => {
                             const isNew = lastSeen && opp.created_at && new Date(opp.created_at) > new Date(lastSeen)
                             return (
-                            <tr key={opp.id}
-                              style={{ ...s.tr, boxShadow: isNew ? 'inset 3px 0 0 #7c3aed' : 'none' }}
-                              onClick={() => setDrawerItem({ type:'opp', data:opp })}
-                              onMouseEnter={e => e.currentTarget.style.background = dk?'#1a1a1a':'#f5f3ff'}
-                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                              <td style={s.td}>
-                                <div style={s.caseName}>{opp.title}</div>
-                                <div style={s.caseSub}>{opp.product}</div>
-                              </td>
-                              <td style={s.td}><span style={s.chip}>{opp.customer}</span></td>
-                              <td style={{ ...s.td, textAlign:'center' }}><OppStatusBadge status={opp.status} /></td>
-                              <td style={{ ...s.td, textAlign:'center' }}><span style={s.chip}>{opp.owner || '—'}</span></td>
-                              <td style={{ ...s.td, textAlign:'right' }}>{fmtK(opp.amount)}</td>
-                              <td style={{ ...s.td, textAlign:'center' }}><span style={s.chip}>{opp.expected_date || '—'}</span></td>
-                              <td style={{ ...s.td, textAlign:'center' }}><ConfBar pct={opp.confidence || 0} /></td>
-                              <td style={{ ...s.td, textAlign:'center' }}><PriorityBadge priority={opp.priority} /></td>
-                            </tr>
+                              <tr key={opp.id}
+                                style={{ ...s.tr, boxShadow: isNew ? 'inset 3px 0 0 #7c3aed' : 'none' }}
+                                onClick={() => setDrawerItem({ type:'opp', data:opp })}
+                                onMouseEnter={e => e.currentTarget.style.background = dk?'#1a1a1a':'#f5f3ff'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                                <td style={s.td}><div style={s.caseName}>{opp.title}</div><div style={s.caseSub}>{opp.product}</div></td>
+                                <td style={s.td}><span style={s.chip}>{opp.customer}</span></td>
+                                <td style={{ ...s.td, textAlign:'center' }}><OppStatusBadge status={opp.status} /></td>
+                                <td style={{ ...s.td, textAlign:'center' }}><span style={s.chip}>{opp.owner || '—'}</span></td>
+                                <td style={{ ...s.td, textAlign:'right' }}>{fmtK(opp.amount)}</td>
+                                <td style={{ ...s.td, textAlign:'center' }}><span style={s.chip}>{opp.expected_date || '—'}</span></td>
+                                <td style={{ ...s.td, textAlign:'center' }}><ConfBar pct={opp.confidence || 0} /></td>
+                                <td style={{ ...s.td, textAlign:'center' }}><PriorityBadge priority={opp.priority} /></td>
+                              </tr>
                             )
                           })}
                         </tbody>
                       </table>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+                  )
+                })}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -375,17 +392,17 @@ export default function OwnPipeline({ darkMode, session, lastSeen }) {
 // AddOpportunityModal
 // ─────────────────────────────────────────────────────
 function AddOpportunityModal({ darkMode, session, onClose, onSaved, productCats = [] }) {
-  const [saving, setSaving]         = useState(false)
-  const [error, setError]           = useState(null)
-  const [title, setTitle]           = useState('')
-  const [customer, setCustomer]     = useState('')
-  const [product, setProduct]       = useState('')
-  const [currency, setCurrency]     = useState('KRW')
-  const [amount, setAmount]         = useState(0)
+  const [saving, setSaving]             = useState(false)
+  const [error, setError]               = useState(null)
+  const [title, setTitle]               = useState('')
+  const [customer, setCustomer]         = useState('')
+  const [country, setCountry]           = useState('')
+  const [product, setProduct]           = useState('')
+  const [amount, setAmount]             = useState(0)
   const [expectedDate, setExpectedDate] = useState('')
   const [statusLabel, setStatusLabel]   = useState('기획 중')
-  const [confidence, setConfidence] = useState(0)
-  const [priority, setPriority]     = useState(5)
+  const [confidence, setConfidence]     = useState(0)
+  const [priority, setPriority]         = useState(5)
   const PRIORITY_OPTS = [
     { val:'high', range:[1,3], label:'HIGH', color:'#D85A30', bg:'#FAECE7' },
     { val:'mid',  range:[4,6], label:'MID',  color:'#BA7517', bg:'#FAEEDA' },
@@ -402,9 +419,8 @@ function AddOpportunityModal({ darkMode, session, onClose, onSaved, productCats 
     if (!expectedDate)    { setError('예상 계약월을 입력해주세요'); return }
     setSaving(true); setError(null)
     const { error: e } = await supabase.from('opportunities').insert({
-      title: title.trim(), customer: customer.trim(), product: pc,
-      currency, amount,
-      expected_date: expectedDate,
+      title: title.trim(), customer: customer.trim(), country, product: pc,
+      amount, expected_date: expectedDate,
       status: OPP_STATUS_LABEL_TO_DB[statusLabel] || 'Idea',
       confidence, priority,
       owner: getAlias(session), is_active: true,
@@ -429,36 +445,42 @@ function AddOpportunityModal({ darkMode, session, onClose, onSaved, productCats 
           <button onClick={onClose} style={{ fontSize:20, color:'#7c3aed', background:'none', border:'none', cursor:'pointer', lineHeight:1 }}>×</button>
         </div>
         <div style={{ padding:'20px 20px 0' }}>
+
+          {/* 1열: 프로젝트명 | 고객사 | 국가 */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:12, marginBottom:14 }}>
-            <div style={{ ...field, gridColumn:'span 2' }}><label style={lbl}>프로젝트명 *</label><input style={inp} value={title} onChange={e => setTitle(e.target.value)} /></div>
+            <div style={field}><label style={lbl}>프로젝트명 *</label><input style={inp} value={title} onChange={e => setTitle(e.target.value)} /></div>
             <div style={field}><label style={lbl}>고객사</label><input style={inp} value={customer} onChange={e => setCustomer(e.target.value)} /></div>
+            <div style={field}><label style={lbl}>국가</label>
+              <select style={inp} value={country} onChange={e => setCountry(e.target.value)}>
+                <option value="">선택</option>
+                {COUNTRY_OPTIONS.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+              </select>
+            </div>
           </div>
+
+          {/* 2열: 제품구분 | 예상금액 | 예상계약월 | 확도 */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:12, marginBottom:14 }}>
             <div style={field}>
               <label style={lbl}>제품구분</label>
               <ProductCatSelect value={product} onChange={setProduct} productCats={productCats} inp={inp} darkMode={dk} />
             </div>
-            <div style={field}><label style={lbl}>통화</label>
-              <select style={inp} value={currency} onChange={e => setCurrency(e.target.value)}>
-                {['KRW','USD','CNY','JPY','EUR'].map(c => <option key={c}>{c}</option>)}
-              </select>
-            </div>
-            <div style={field}><label style={lbl}>예상 금액 (K)</label><input style={inp} type="number" value={amount} onChange={e => setAmount(Number(e.target.value))} /></div>
+            <div style={field}><label style={lbl}>예상 금액 (만원)</label><input style={inp} type="number" value={amount} onChange={e => setAmount(Number(e.target.value))} /></div>
             <div style={field}><label style={lbl}>예상 계약월</label><input style={inp} type="month" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} /></div>
-          </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:14 }}>
-            <div style={field}>
-              <label style={lbl}>상태</label>
-              <div style={{ display:'flex', gap:6 }}>
-                {OPP_STATUS_OPTIONS.map(v => (
-                  <button key={v}
-                    style={{ fontSize:11, padding:'4px 10px', borderRadius:5, border:`1px solid ${statusLabel===v?'#7c3aed':dk?'#2a2a2a':'#e5e7eb'}`, background:statusLabel===v?'rgba(124,58,237,0.1)':'transparent', color:statusLabel===v?'#7c3aed':'#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
-                    onClick={() => setStatusLabel(v)}>{v}</button>
-                ))}
-              </div>
-            </div>
             <div style={field}><label style={lbl}>확도 (%)</label><input style={inp} type="number" min={0} max={100} value={confidence} onChange={e => setConfidence(Number(e.target.value))} /></div>
           </div>
+
+          {/* 3열: 상태 */}
+          <div style={{ marginBottom:14 }}>
+            <label style={lbl}>상태</label>
+            <div style={{ display:'flex', gap:6 }}>
+              {OPP_STATUS_OPTIONS.map(v => (
+                <button key={v}
+                  style={{ fontSize:11, padding:'4px 10px', borderRadius:5, border:`1px solid ${statusLabel===v?'#7c3aed':dk?'#2a2a2a':'#e5e7eb'}`, background:statusLabel===v?'rgba(124,58,237,0.1)':'transparent', color:statusLabel===v?'#7c3aed':'#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
+                  onClick={() => setStatusLabel(v)}>{v}</button>
+              ))}
+            </div>
+          </div>
+
           <div style={{ marginBottom:16 }}>
             <label style={lbl}>초기 중요도</label>
             <div style={{ display:'flex', gap:8 }}>

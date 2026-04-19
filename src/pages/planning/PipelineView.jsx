@@ -16,6 +16,22 @@ import AddProjectModal from './AddProjectModal'
 // ── 모듈 스코프 스타일 캐시 ──
 let _styles = null
 
+// ── LiveClock ─────────────────────────────────────────
+function LiveClock({ darkMode }) {
+  const [now, setNow] = useState(new Date())
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 1000); return () => clearInterval(t) }, [])
+  const tx0 = darkMode ? '#d1d5db' : '#374151'
+  const tx1 = darkMode ? '#6b7280' : '#9ca3af'
+  const dateStr = now.toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short' })
+  const timeStr = now.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false })
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+      <span style={{ fontSize:12, color:tx0, fontVariantNumeric:'tabular-nums' }}>{dateStr}</span>
+      <span style={{ fontSize:12, color:tx1, fontVariantNumeric:'tabular-nums' }}>{timeStr}</span>
+    </div>
+  )
+}
+
 // ── 환율 훅 ──────────────────────────────────────────
 function useCurrency() {
   const [ccy, setCcy] = useState('KRW')
@@ -260,25 +276,8 @@ export default function PipelineView({ darkMode, session, lastSeen, initialSimMo
 
       {/* ── 툴바 ── */}
       <div style={s.toolbar}>
-        {/* 내부 탭 */}
-        <div style={s.innerTabs}>
-          <button style={{ ...s.innerTab, ...(innerTab === 'deals' ? s.innerTabOn : {}) }} onClick={() => setInnerTab('deals')}>
-            계약 건 <span style={s.tabCount}>{filteredDeals.length}</span>
-          </button>
-          <button style={{ ...s.innerTab, ...(innerTab === 'opps' ? s.innerTabOn : {}) }} onClick={() => setInnerTab('opps')}>
-            사업 기회 <span style={s.tabCount}>{filteredOpps.length}</span>
-          </button>
-        </div>
-
-        {/* 우측 컨트롤 */}
+        <LiveClock darkMode={dk} />
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-          {innerTab === 'deals' && (
-            <button
-              style={{ fontSize: 11, padding: '0 12px', height: 30, borderRadius: 6, border: `1px solid ${simMode ? '#7E48C5' : (dk ? '#2a2a2a' : '#e5e7eb')}`, background: simMode ? (dk ? '#1e1635' : '#ede9fe') : 'transparent', color: simMode ? '#7E48C5' : (dk ? '#9ca3af' : '#6b7280'), cursor: 'pointer', fontFamily: "'Geist', sans-serif", fontWeight: simMode ? 500 : 400, whiteSpace: 'nowrap' }}
-              onClick={() => { setSimMode(v => !v); if (simMode) { setSimChanges({}); setSimChildren({}) } }}>
-              {simMode ? '● 시나리오 모드' : '시나리오 모드'}
-            </button>
-          )}
           <input style={s.searchInput} placeholder="프로젝트 / 고객사 검색" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
           <div style={{ width: 1, height: 20, background: dk ? '#2a2a2a' : '#e5e7eb' }} />
           <div style={s.ccyWrap}>
@@ -291,24 +290,21 @@ export default function PipelineView({ darkMode, session, lastSeen, initialSimMo
         </div>
       </div>
 
-      {/* ── KPI (계약건 탭만) ── */}
-      {innerTab === 'deals' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.6fr', gap: 10, padding: '12px 20px', background: dk ? '#0a0a0a' : '#f5f5f7', borderBottom: `1px solid ${br}` }}>
-          <KpiCard dot="#D05C9F" label="계약건 확정"  value={fmtK(kpiWonAmount)}    sub={`계약 ${filteredDeals.filter(d => d.status === 'won').length}건`} darkMode={dk} />
-          <KpiCard dot="#7E48C5" label="포캐스트"      value={fmtK(simMode ? activeForecast : kpiActiveAmount)} sub={`확도 반영 합산`} darkMode={dk}
-            sim={simMode && hasSimChanges ? { value: fmtK(simForecast) } : null} fmtK={fmtK} />
-          <KpiCard dot="#3572E5" label="사업계획"      value={fmtK(kpiTargetAmount)} sub={`연간 합산`} darkMode={dk} />
-          <GapKpiCard gap={rawGap} achieveRate={kpiAchieveRate} fmtK={fmtK} oppSummary={oppSummary} darkMode={dk} qRangeLabel={qRangeLabel} />
-        </div>
-      )}
+      {/* ── KPI ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.6fr', gap: 10, padding: '12px 20px', background: dk ? '#0a0a0a' : '#f5f5f7', borderBottom: `1px solid ${br}` }}>
+        <KpiCard dot="#D05C9F" label="계약건 확정"  value={fmtK(kpiWonAmount)}    sub={`계약 ${filteredDeals.filter(d => d.status === 'won').length}건`} darkMode={dk} />
+        <KpiCard dot="#7E48C5" label="포캐스트"      value={fmtK(simMode ? activeForecast : kpiActiveAmount)} sub={`확도 반영 합산`} darkMode={dk}
+          sim={simMode && hasSimChanges ? { value: fmtK(simForecast) } : null} fmtK={fmtK} />
+        <KpiCard dot="#3572E5" label="사업계획"      value={fmtK(kpiTargetAmount)} sub={`연간 합산`} darkMode={dk} />
+        <GapKpiCard gap={rawGap} achieveRate={kpiAchieveRate} fmtK={fmtK} oppSummary={oppSummary} darkMode={dk} qRangeLabel={qRangeLabel} />
+      </div>
 
       {/* ── 바디 ── */}
       <div style={s.body}>
 
-        {innerTab === 'deals' ? (
-          <>
-            {/* 차트 + 슬라이더 */}
-            {!chartCollapsed && (
+        <>
+          {/* 차트 + 슬라이더 */}
+          {!chartCollapsed && (
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 12 }}>
               {/* 목표 vs 실적 vs 포캐스트 */}
               <div style={{ background: dk ? '#111' : '#fff', border: `1px solid ${br}`, borderRadius: 10, padding: '16px 18px' }}>
@@ -430,28 +426,42 @@ export default function PipelineView({ darkMode, session, lastSeen, initialSimMo
               <div style={{ flex: 1, height: '1px', background: dk ? '#1f1f1f' : '#e2e2e2' }} />
             </div>
 
-            {/* 딜 테이블 */}
+            {/* 헤더 카드 - 항상 표시 */}
             <div style={s.tableCard}>
               <div style={s.tblTop}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={s.tblTitle}>{simMode ? '시나리오 모드' : '계약 건'}</span>
-                  {simMode && (
-                    <span style={{ fontSize: 11, color: dk ? '#6b7280' : '#6b7280', background: dk ? '#1a1a1a' : '#f0f0f0', padding: '2px 8px', borderRadius: 99 }}>
-                      {Object.keys(simChanges).length}건 변경
-                    </span>
-                  )}
+                {/* 좌: 계약건 | 사업기회 탭 */}
+                <div style={{ display:'flex', alignItems:'center', gap:2 }}>
+                  <button style={{ ...s.innerTab, ...(innerTab==='deals' ? s.innerTabOn : {}) }} onClick={() => setInnerTab('deals')}>
+                    계약 건 <span style={s.tabCount}>{filteredDeals.length}</span>
+                  </button>
+                  <button style={{ ...s.innerTab, ...(innerTab==='opps' ? s.innerTabOn : {}) }} onClick={() => setInnerTab('opps')}>
+                    사업 기회 <span style={s.tabCount}>{filteredOpps.length}</span>
+                  </button>
                 </div>
-                {simMode && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                {/* 우: 시나리오 관련 (계약건 탭일 때만) */}
+                {innerTab === 'deals' && (
+                  <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                    {simMode && (
+                      <>
+                        <span style={{ fontSize:11, color:dk?'#6b7280':'#6b7280', background:dk?'#1a1a1a':'#f0f0f0', padding:'2px 8px', borderRadius:99 }}>
+                          {Object.keys(simChanges).length}건 변경
+                        </span>
+                        <button style={{ fontSize:11, padding:'1px 8px', borderRadius:4, border:`1px solid ${dk?'#2a2a2a':'#e5e7eb'}`, background:'transparent', color:dk?'#9ca3af':'#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
+                          onClick={() => { setSimChanges({}); setSimChildren({}) }}>폐기</button>
+                        <button style={{ fontSize:11, padding:'1px 8px', borderRadius:4, border:`1px solid ${dk?'#2a2a2a':'#e5e7eb'}`, background:dk?'#1e1635':'#ede9fe', color:'#7E48C5', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
+                          onClick={() => setDiffOpen(true)}>확정 리뷰</button>
+                      </>
+                    )}
                     <button
-                      style={{ fontSize: 11, padding: '1px 8px', borderRadius: 4, border: `1px solid ${dk ? '#2a2a2a' : '#e5e7eb'}`, background: 'transparent', color: dk ? '#9ca3af' : '#6b7280', cursor: 'pointer', fontFamily: "'Geist', sans-serif" }}
-                      onClick={() => { setSimChanges({}); setSimChildren({}) }}>폐기</button>
-                    <button
-                      style={{ fontSize: 11, padding: '1px 8px', borderRadius: 4, border: `1px solid ${dk ? '#2a2a2a' : '#e5e7eb'}`, background: dk ? '#1e1635' : '#ede9fe', color: '#7E48C5', cursor: 'pointer', fontFamily: "'Geist', sans-serif" }}
-                      onClick={() => setDiffOpen(true)}>확정 리뷰</button>
+                      style={{ fontSize:11, padding:'0 12px', height:28, borderRadius:6, border:`1px solid ${simMode?'#7E48C5':(dk?'#2a2a2a':'#e5e7eb')}`, background:simMode?(dk?'#1e1635':'#ede9fe'):'transparent', color:simMode?'#7E48C5':(dk?'#9ca3af':'#6b7280'), cursor:'pointer', fontFamily:"'Geist', sans-serif", fontWeight:simMode?500:400, whiteSpace:'nowrap' }}
+                      onClick={() => { setSimMode(v => !v); if (simMode) { setSimChanges({}); setSimChildren({}) } }}>
+                      {simMode ? '● 시나리오 모드' : '시나리오 모드'}
+                    </button>
                   </div>
                 )}
               </div>
+              {/* 계약건 탭: 테이블 카드 안에 */}
+              {innerTab === 'deals' && (
               <div style={{ overflowX: 'auto' }}>
                 <table style={s.tbl}>
                   <colgroup>
@@ -514,16 +524,17 @@ export default function PipelineView({ darkMode, session, lastSeen, initialSimMo
                   </tbody>
                 </table>
               </div>
+              )}
+              {/* 사업기회 탭: 같은 카드 안에 그룹별 렌더 */}
+              {innerTab === 'opps' && (
+                <OppsTable opps={tableOpps} darkMode={dk} fmtK={fmtK} lastSeen={lastSeen} s={s}
+                  oppCfOpts={oppCfOpts} oppCf={oppCf} setOppFilter={setOppFilter}
+                  oppSortKey={oppSortKey} oppSortDir={oppSortDir} handleOppSort={handleOppSort}
+                  onRowClick={opp => setDrawerItem({ type: 'opp', data: opp })} />
+              )}
             </div>
           </>
-        ) : (
-          /* ── 사업 기회 테이블 ── */
-          <OppsTable opps={tableOpps} darkMode={dk} fmtK={fmtK} lastSeen={lastSeen} s={s}
-            oppCfOpts={oppCfOpts} oppCf={oppCf} setOppFilter={setOppFilter}
-            oppSortKey={oppSortKey} oppSortDir={oppSortDir} handleOppSort={handleOppSort}
-            onRowClick={opp => setDrawerItem({ type: 'opp', data: opp })} />
-        )}
-      </div>
+        </div>
 
       {/* ── DIFF 모달 ── */}
       {diffOpen && (
@@ -627,49 +638,47 @@ function OppsTable({ opps, darkMode, fmtK, lastSeen, s, oppCfOpts, oppCf, setOpp
     </tr>
   )
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
       {['high', 'mid', 'low', 'dummy'].map(group => {
         const items = grouped[group]
         if (items.length === 0) return null
         const { label, color, bg } = PRIORITY_LABEL[group]
         return (
           <div key={group}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <span style={{ fontSize: 11, fontWeight: 500, background: bg, color, padding: '2px 10px', borderRadius: 99 }}>{label}</span>
-              <span style={{ fontSize: 11, color: '#6b7280', background: darkMode ? '#1a1a1a' : '#f0f0f0', padding: '2px 8px', borderRadius: 99 }}>{items.length}건</span>
-              <div style={{ flex: 1, height: '0.5px', background: darkMode ? '#1f1f1f' : '#e2e2e2' }} />
+            {/* 그룹 구분 */}
+            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 16px', borderTop: group !== 'high' ? `1px solid ${darkMode?'#1f1f1f':'#e2e2e2'}` : 'none', borderBottom:`1px solid ${darkMode?'#1f1f1f':'#e2e2e2'}`, background: darkMode?'#0d0d0d':'#f8f8f8' }}>
+              <span style={{ fontSize:11, fontWeight:500, background:bg, color, padding:'2px 10px', borderRadius:99 }}>{label}</span>
+              <span style={{ fontSize:11, color:'#6b7280', background: darkMode?'#1a1a1a':'#f0f0f0', padding:'2px 8px', borderRadius:99 }}>{items.length}건</span>
             </div>
-            <div style={s.tableCard}>
-              <table style={s.tbl}>
-                <colgroup>
-                  <col style={{ width: '26%' }} /><col style={{ width: '11%' }} /><col style={{ width: '10%' }} />
-                  <col style={{ width: '10%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} />
-                  <col style={{ width: '10%' }} /><col style={{ width: '9%' }} />
-                </colgroup>
-                <thead><OppHeader /></thead>
-                <tbody>
-                  {items.map(opp => {
-                    const isNew = lastSeen && opp.created_at && new Date(opp.created_at) > new Date(lastSeen)
-                    return (
-                      <tr key={opp.id}
-                        style={{ ...s.tr, boxShadow: isNew ? 'inset 3px 0 0 #D05C9F' : 'none' }}
-                        onClick={() => onRowClick(opp)}
-                        onMouseEnter={e => e.currentTarget.style.background = darkMode ? '#1a1a1a' : '#f5f3ff'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                        <td style={s.td}><div style={s.caseName}>{opp.title}</div><div style={s.caseSub}>{opp.product}</div></td>
-                        <td style={s.td}><span style={s.chip}>{opp.customer}</span></td>
-                        <td style={{ ...s.td, textAlign: 'center' }}><OppStatusBadge status={opp.status} /></td>
-                        <td style={{ ...s.td, textAlign: 'center' }}><span style={s.chip}>{opp.owner || '—'}</span></td>
-                        <td style={{ ...s.td, textAlign: 'right' }}>{fmtK(opp.amount)}</td>
-                        <td style={{ ...s.td, textAlign: 'center' }}><span style={s.chip}>{opp.expected_date || '—'}</span></td>
-                        <td style={{ ...s.td, textAlign: 'center' }}><ConfBar pct={opp.confidence || 0} /></td>
-                        <td style={{ ...s.td, textAlign: 'center' }}><PriorityBadge priority={opp.priority} /></td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <table style={s.tbl}>
+              <colgroup>
+                <col style={{ width: '26%' }} /><col style={{ width: '11%' }} /><col style={{ width: '10%' }} />
+                <col style={{ width: '10%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11%' }} />
+                <col style={{ width: '10%' }} /><col style={{ width: '9%' }} />
+              </colgroup>
+              <thead><OppHeader /></thead>
+              <tbody>
+                {items.map(opp => {
+                  const isNew = lastSeen && opp.created_at && new Date(opp.created_at) > new Date(lastSeen)
+                  return (
+                    <tr key={opp.id}
+                      style={{ ...s.tr, boxShadow: isNew ? 'inset 3px 0 0 #D05C9F' : 'none' }}
+                      onClick={() => onRowClick(opp)}
+                      onMouseEnter={e => e.currentTarget.style.background = darkMode ? '#1a1a1a' : '#f5f3ff'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td style={s.td}><div style={s.caseName}>{opp.title}</div><div style={s.caseSub}>{opp.product}</div></td>
+                      <td style={s.td}><span style={s.chip}>{opp.customer}</span></td>
+                      <td style={{ ...s.td, textAlign: 'center' }}><OppStatusBadge status={opp.status} /></td>
+                      <td style={{ ...s.td, textAlign: 'center' }}><span style={s.chip}>{opp.owner || '—'}</span></td>
+                      <td style={{ ...s.td, textAlign: 'right' }}>{fmtK(opp.amount)}</td>
+                      <td style={{ ...s.td, textAlign: 'center' }}><span style={s.chip}>{opp.expected_date || '—'}</span></td>
+                      <td style={{ ...s.td, textAlign: 'center' }}><ConfBar pct={opp.confidence || 0} /></td>
+                      <td style={{ ...s.td, textAlign: 'center' }}><PriorityBadge priority={opp.priority} /></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )
       })}
@@ -881,7 +890,7 @@ function EditPanel({ deal, fmtK, quarters, owners, productCats, onApply, onCance
           </select>
         </div>
         <div style={s.editField}><label style={s.editLabel}>예상 계약월</label><input style={s.editInput} value={contractMonth} onChange={e => setContractMonth(e.target.value)} type="month" /></div>
-        <div style={s.editField}><label style={s.editLabel}>확률 (%)</label><input style={s.editInput} type="number" value={conf} min={0} max={100} onChange={e => setConf(Number(e.target.value))} /></div>
+        <div style={s.editField}><label style={s.editLabel}>확도 (%)</label><input style={s.editInput} type="number" value={conf} min={0} max={100} onChange={e => setConf(Number(e.target.value))} /></div>
         <div style={s.editField}><label style={s.editLabel}>계약금액 (만원)</label><input style={s.editInput} type="number" value={amt} step={1000} onChange={e => setAmt(Number(e.target.value))} /><span style={s.editHint}>반영: {fmtK(reflect)}</span></div>
       </div>
       <div style={{ ...s.editGrid, gridTemplateColumns: '1fr 1fr 1fr 2fr', marginBottom: 10 }}>

@@ -164,7 +164,7 @@ export default function DealDrawer({
             ) : (
               <>
                 <InfoChip label="제품" value={data.product} />
-                <InfoChip label="통화" value={data.currency} />
+                <InfoChip label="국가" value={data.country} />
                 <InfoChip label="예상월" value={data.expected_date} />
                 <InfoChip label="확도" value={`${data.confidence || 0}%`} />
               </>
@@ -489,8 +489,8 @@ function DealEditForm({ deal, darkMode, fmtK, saving, onSave, onCancel, productC
 function OppEditForm({ opp, darkMode, saving, onSave, onCancel, productCats = [] }) {
   const [title, setTitle]               = useState(opp.title || '')
   const [customer, setCustomer]         = useState(opp.customer || '')
+  const [country, setCountry]           = useState(opp.country || '')
   const [product, setProduct]           = useState(opp.product || '')
-  const [currency, setCurrency]         = useState(opp.currency || 'KRW')
   const [amount, setAmount]             = useState(opp.amount || 0)
   const [expectedDate, setExpectedDate] = useState(opp.expected_date || '')
   const [confidence, setConfidence]     = useState(opp.confidence || 0)
@@ -517,8 +517,8 @@ function OppEditForm({ opp, darkMode, saving, onSave, onCancel, productCats = []
     if (!expectedDate)        { setFormError('예상 계약월을 입력해주세요'); return }
     setFormError(null)
     onSave({
-      title: title.trim(), customer: customer.trim(), product: product.trim(),
-      currency, amount, expected_date: expectedDate,
+      title: title.trim(), customer: customer.trim(), country, product: product.trim(),
+      amount, expected_date: expectedDate,
       confidence,
       status: OPP_STATUS_LABEL_TO_DB[statusLabel] || 'Idea',
       priority,
@@ -528,32 +528,38 @@ function OppEditForm({ opp, darkMode, saving, onSave, onCancel, productCats = []
   return (
     <div style={{ background:bg, padding:'16px 20px', borderTop:`1px solid ${br}` }}>
       <p style={{ fontSize:11, fontWeight:500, color:'#7c3aed', marginBottom:12, textTransform:'uppercase', letterSpacing:'0.04em' }}>✏️ 사업 기회 수정</p>
+
+      {/* 1열: 프로젝트명 | 고객사 | 국가 */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(3,minmax(0,1fr))', gap:10, marginBottom:10 }}>
-        <div style={{ ...field, gridColumn:'span 2' }}><label style={lbl}>프로젝트명</label><input style={inp} value={title} onChange={e => setTitle(e.target.value)} /></div>
+        <div style={field}><label style={lbl}>프로젝트명 *</label><input style={inp} value={title} onChange={e => setTitle(e.target.value)} /></div>
         <div style={field}><label style={lbl}>고객사</label><input style={inp} value={customer} onChange={e => setCustomer(e.target.value)} /></div>
-      </div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:10, marginBottom:10 }}>
-        <div style={field}><label style={lbl}>제품구분</label><ProductCatSelect value={product} onChange={setProduct} productCats={productCats} inp={inp} darkMode={dk} /></div>
-        <div style={field}><label style={lbl}>통화</label>
-          <select style={inp} value={currency} onChange={e => setCurrency(e.target.value)}>
-            {['KRW','USD','CNY','JPY','EUR'].map(c => <option key={c}>{c}</option>)}
+        <div style={field}><label style={lbl}>국가</label>
+          <select style={inp} value={country} onChange={e => setCountry(e.target.value)}>
+            <option value="">선택</option>
+            {COUNTRY_OPTIONS.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
           </select>
         </div>
-        <div style={field}><label style={lbl}>예상 금액 (K)</label><input style={inp} type="number" value={amount} onChange={e => setAmount(Number(e.target.value))} /></div>
-        <div style={field}><label style={lbl}>예상 계약월</label><input style={inp} type="month" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} /></div>
       </div>
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:10 }}>
-        <div style={field}>
-          <label style={lbl}>상태</label>
-          <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
-            {OPP_STATUS_OPTIONS.map(v => (
-              <button key={v} style={{ fontSize:11, padding:'3px 8px', borderRadius:5, border:`1px solid ${statusLabel===v?'#7c3aed':dk?'#2a2a2a':'#d1d5db'}`, background:statusLabel===v?'rgba(124,58,237,0.1)':'transparent', color:statusLabel===v?'#7c3aed':'#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
-                onClick={() => setStatusLabel(v)}>{v}</button>
-            ))}
-          </div>
-        </div>
+
+      {/* 2열: 제품구분 | 예상금액 | 예상계약월 | 확도 */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,minmax(0,1fr))', gap:10, marginBottom:10 }}>
+        <div style={field}><label style={lbl}>제품구분</label><ProductCatSelect value={product} onChange={setProduct} productCats={productCats} inp={inp} darkMode={dk} /></div>
+        <div style={field}><label style={lbl}>예상 금액 (만원)</label><input style={inp} type="number" value={amount} onChange={e => setAmount(Number(e.target.value))} /></div>
+        <div style={field}><label style={lbl}>예상 계약월</label><input style={inp} type="month" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} /></div>
         <div style={field}><label style={lbl}>확도 (%)</label><input style={inp} type="number" min={0} max={100} value={confidence} onChange={e => setConfidence(Number(e.target.value))} /></div>
       </div>
+
+      {/* 3열: 상태 */}
+      <div style={{ marginBottom:10 }}>
+        <label style={lbl}>상태</label>
+        <div style={{ display:'flex', gap:4, flexWrap:'wrap' }}>
+          {OPP_STATUS_OPTIONS.map(v => (
+            <button key={v} style={{ fontSize:11, padding:'3px 8px', borderRadius:5, border:`1px solid ${statusLabel===v?'#7c3aed':dk?'#2a2a2a':'#d1d5db'}`, background:statusLabel===v?'rgba(124,58,237,0.1)':'transparent', color:statusLabel===v?'#7c3aed':'#6b7280', cursor:'pointer', fontFamily:"'Geist', sans-serif" }}
+              onClick={() => setStatusLabel(v)}>{v}</button>
+          ))}
+        </div>
+      </div>
+
       <div style={{ marginBottom:12 }}>
         <label style={lbl}>중요도</label>
         <div style={{ display:'flex', gap:8 }}>
